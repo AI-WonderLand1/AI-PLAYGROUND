@@ -10,7 +10,7 @@ import {
   Key, Sliders
 } from 'lucide-react';
 import { MemoryNode, NexusEvent, ModelName } from '../types';
-import { cn } from '../utils';
+import { cn, getOpenRouterModel } from '../utils';
 import { CATALOG_MODELS } from './ModelsCatalog';
 import { GoogleGenAI } from '@google/genai';
 
@@ -35,6 +35,13 @@ export interface WorkflowNode {
     topP?: number;
     maxTokens?: number;
     promptTemplate?: string;
+    httpMethod?: string;
+    httpUrl?: string;
+    httpHeaders?: string;
+    httpBody?: string;
+    conditionOperator?: 'equals' | 'not_equals' | 'greater_than' | 'less_than' | 'contains' | 'starts_with' | 'regex';
+    conditionLeft?: string;
+    conditionRight?: string;
     mockInputs?: Record<string, string>;
     mockOutputs?: Record<string, any>;
     useInTrainingSet?: boolean;
@@ -48,6 +55,7 @@ export interface WorkflowConnection {
   fromId: string;
   toId: string;
   isTrainingEdge?: boolean;
+  fromPort?: 'true' | 'false';
 }
 
 interface AIWonderCanvasProps {
@@ -226,6 +234,17 @@ export function AIWonderCanvas({
   // Gemini Diagnostic Fix in Bottom Drawer
   const [aiExplanations, setAiExplanations] = useState<Record<string, { explanation: string; fix: string; loading: boolean }>>({});
 
+  // Execution outputs per node
+  const [nodeOutputs, setNodeOutputs] = useState<Record<string, {
+    status: 'idle' | 'running' | 'success' | 'error';
+    output: string;
+    timestamp: number;
+    duration?: number;
+    tokens?: number;
+    error?: string;
+  }>>({});
+  const [executingNodeIds, setExecutingNodeIds] = useState<Set<string>>(new Set());
+
   // Notifications
   const [notification, setNotification] = useState<string | null>(null);
 
@@ -352,10 +371,16 @@ export function AIWonderCanvas({
       // Avoid duplicate connections
       const exists = connections.some(c => c.fromId === connectingPin.nodeId && c.toId === nodeId);
       if (!exists) {
+        const fromNode = nodes.find(n => n.id === connectingPin.nodeId);
+        const existingFromConns = connections.filter(c => c.fromId === connectingPin.nodeId);
+        const fromPort = fromNode?.type === 'if'
+          ? (existingFromConns.length === 0 ? 'true' as const : 'false' as const)
+          : undefined;
         const newConn: WorkflowConnection = {
           id: `conn-${Math.random().toString(36).substr(2, 9)}`,
           fromId: connectingPin.nodeId,
-          toId: nodeId
+          toId: nodeId,
+          fromPort,
         };
         setConnections(prev => [...prev, newConn]);
         setExecutionLog(prev => [...prev, `[System] Connection established: ${connectingPin.nodeId} → ${nodeId}`]);
@@ -443,6 +468,17 @@ export function AIWonderCanvas({
           systemPrompt: 'You are an AI-Wonder automated node agent...',
           temperature: 0.7,
           topP: 0.95
+        } : {}),
+        ...(type === 'http' ? {
+          httpMethod: 'GET',
+          httpUrl: 'https://api.example.com/data',
+          httpHeaders: '{"Content-Type": "application/json"}',
+          httpBody: '',
+        } : {}),
+        ...(type === 'if' ? {
+          conditionOperator: 'equals',
+          conditionLeft: '$input',
+          conditionRight: 'true',
         } : {}),
         mockInputs: { payload: '{}' },
         mockOutputs: { status: 'success' }
@@ -591,19 +627,216 @@ export function AIWonderCanvas({
     showNotification(`${updatedNode.config.title || updatedNode.label} config saved`);
   };
 
+  // Execute a single AI node via OpenRouter
+  const executeAINode = async (node: WorkflowNode, inputText: string): Promise<{ output: string; tokens?: number }> => {
+    const openrouterKey = localStorage.getItem('mc_key_openrouter');
+    const openrouterModel = getOpenRouterModel(node.config.model || '');
+
+    if (!openrouterKey || !openrouterModel) {
+      throw new Error(`No OpenRouter route for model ${node.config.model}`);
+    }
+
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${openrouterKey}`,
+      },
+      body: JSON.stringify({
+        model: openrouterModel,
+        messages: [
+          ...(node.config.systemPrompt ? [{ role: 'system', content: node.config.systemPrompt }] : []),
+          { role: 'user', content: inputText }
+        ],
+        temperature: node.config.temperature ?? 0.7,
+        top_p: node.config.topP ?? 0.9,
+        max_tokens: node.config.maxTokens ?? 2048,
+      }),
+    });
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody?.error?.message || `OpenRouter HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    return {
+      output: data.choices?.[0]?.message?.content || 'Empty response received.',
+      tokens: data.usage?.total_tokens,
+    };
+  };
+
+  // Get upstream input for a node based on connections
+  const getNodeInput = (nodeId: string): string => {
+    const upstreamConns = connections.filter(c => c.toId === nodeId);
+    const upstreamOutputs = upstreamConns
+      .map(c => nodeOutputs[c.fromId])
+      .filter(Boolean);
+    if (upstreamOutputs.length > 0) {
+      return upstreamOutputs.map(o => o.output).join('\n\n');
+    }
+    // Fall back to mockInputs
+    const node = nodes.find(n => n.id === nodeId);
+    if (node?.config.mockInputs) {
+      return Object.entries(node.config.mockInputs)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\n');
+    }
+    return 'Execute workflow node.';
+  };
+
   // Run the whole workflow
-  const handleExecuteWorkflow = () => {
+  const handleExecuteWorkflow = async () => {
+    const startTime = Date.now();
     setExecutionLog(prev => [
       ...prev,
-      `[${new Date().toLocaleTimeString()}] 🚀 Initiated orchestrator execution flow...`,
-      `[Trigger] Webhook trigger successfully fired. Inbound payload parsed.`,
-      `[Core] Routing active telemetry event stream.`,
-      `[AI Agent] Connecting to Gemini runtime engine model...`,
-      `[AI Agent] Analysis generated: High priority rollback decision proposed.`,
-      `[DreamMakerHub] Synchronizing local logs to global Memory block.`,
-      `[System] Workflow execute completed successfully (Status: 200 OK)`
+      `[${new Date().toLocaleTimeString()}] 🚀 Workflow execution started...`
     ]);
-    showNotification('Workflow executed successfully');
+
+    // Get execution order: follow connections from triggers outward
+    const executed = new Set<string>();
+    const toExecute = nodes.filter(n => n.category === 'trigger').map(n => n.id);
+
+    // Add any unconnected nodes too
+    nodes.forEach(n => {
+      if (!toExecute.includes(n.id)) toExecute.push(n.id);
+    });
+
+    setNodeOutputs({});
+
+    for (const nodeId of toExecute) {
+      const node = nodes.find(n => n.id === nodeId);
+      if (!node || executed.has(nodeId)) continue;
+      executed.add(nodeId);
+
+      setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ▶ Executing: ${node.label}...`]);
+      setExecutingNodeIds(prev => new Set(prev).add(nodeId));
+
+      const nodeStart = Date.now();
+      try {
+        const input = getNodeInput(nodeId);
+
+        if (node.category === 'ai' && node.type === 'agent') {
+          const result = await executeAINode(node, input);
+          setNodeOutputs(prev => ({
+            ...prev,
+            [nodeId]: { status: 'success', output: result.output, timestamp: Date.now(), duration: Date.now() - nodeStart, tokens: result.tokens }
+          }));
+          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — ${result.tokens ? result.tokens + ' tokens' : 'success'} (${Date.now() - nodeStart}ms)`]);
+        } else if (node.type === 'if') {
+          const op = node.config.conditionOperator || 'equals';
+          const left = node.config.conditionLeft || '$input';
+          const right = node.config.conditionRight || 'true';
+          const leftVal = left === '$input' ? input : left;
+          let result = false;
+          try {
+            switch (op) {
+              case 'equals': result = leftVal === right; break;
+              case 'not_equals': result = leftVal !== right; break;
+              case 'greater_than': result = parseFloat(leftVal) > parseFloat(right); break;
+              case 'less_than': result = parseFloat(leftVal) < parseFloat(right); break;
+              case 'contains': result = leftVal.includes(right); break;
+              case 'starts_with': result = leftVal.startsWith(right); break;
+              case 'regex': result = new RegExp(right).test(leftVal); break;
+            }
+          } catch { result = false; }
+          const branch = result ? 'true' : 'false';
+          setNodeOutputs(prev => ({
+            ...prev,
+            [nodeId]: { status: 'success', output: JSON.stringify({ branch, condition: `${leftVal} ${op} ${right} = ${result}` }), timestamp: Date.now(), duration: Date.now() - nodeStart }
+          }));
+          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔀 ${node.label} → ${branch === 'true' ? 'True' : 'False'} (${Date.now() - nodeStart}ms)`]);
+        } else if (node.type === 'code') {
+          const code = node.config.code;
+          if (!code) throw new Error('Code node has no JavaScript to execute');
+          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 💻 Executing code for ${node.label}...`]);
+          try {
+            const fn = new Function('$input', '$output', '$console', code);
+            const mockConsole = { log: (...args: any[]) => console.log('[CodeNode]', ...args) };
+            const result = fn(input, {}, mockConsole);
+            const outputStr = result === undefined ? 'undefined' : (typeof result === 'string' ? result : JSON.stringify(result, null, 2));
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output: outputStr, timestamp: Date.now(), duration: Date.now() - nodeStart }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — executed (${Date.now() - nodeStart}ms)`]);
+          } catch (codeErr: any) {
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'error', output: '', timestamp: Date.now(), error: codeErr.message }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ ${node.label} — ${codeErr.message}`]);
+          }
+        } else if (node.type === 'http') {
+          const url = node.config.httpUrl;
+          if (!url) throw new Error('HTTP URL is required');
+          const method = node.config.httpMethod || 'GET';
+          let headers: Record<string, string> = {};
+          try { headers = JSON.parse(node.config.httpHeaders || '{}'); } catch {}
+          const body = ['POST', 'PUT', 'PATCH'].includes(method) ? node.config.httpBody : undefined;
+
+          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🌐 ${method} ${url}`]);
+          const res = await fetch(url, { method, headers, body });
+          const responseText = await res.text();
+          const output = JSON.stringify({
+            status: res.status,
+            statusText: res.statusText,
+            headers: Object.fromEntries(res.headers.entries()),
+            body: responseText,
+          }, null, 2);
+
+          setNodeOutputs(prev => ({
+            ...prev,
+            [nodeId]: { status: res.ok ? 'success' : 'error', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
+          }));
+          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — HTTP ${res.status} (${Date.now() - nodeStart}ms)`]);
+        } else {
+          // Non-AI/HTTP/code nodes: pass input through as output
+          setNodeOutputs(prev => ({
+            ...prev,
+            [nodeId]: { status: 'success', output: input, timestamp: Date.now(), duration: Date.now() - nodeStart }
+          }));
+          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — completed (${Date.now() - nodeStart}ms)`]);
+        }
+      } catch (err: any) {
+        setNodeOutputs(prev => ({
+          ...prev,
+          [nodeId]: { status: 'error', output: '', timestamp: Date.now(), duration: Date.now() - nodeStart, error: err.message }
+        }));
+        setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ ${node.label} — ${err.message} (${Date.now() - nodeStart}ms)`]);
+      } finally {
+        setExecutingNodeIds(prev => {
+          const next = new Set(prev);
+          next.delete(nodeId);
+          return next;
+        });
+      }
+
+      // Propagate output to downstream nodes (respect port routing for IF nodes)
+      const downstream = connections.filter(c => c.fromId === nodeId);
+      for (const conn of downstream) {
+        // For IF nodes, only follow connections matching the branch
+        if (node.type === 'if' && conn.fromPort) {
+          const branchOutput = nodeOutputs[nodeId]?.output;
+          let branchMatch = false;
+          if (branchOutput) {
+            try {
+              const parsed = JSON.parse(branchOutput);
+              branchMatch = parsed.branch === conn.fromPort;
+            } catch {}
+          }
+          if (!branchMatch) {
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏭ Skipping ${nodes.find(n => n.id === conn.toId)?.label || conn.toId} (port: ${conn.fromPort} doesn't match)`]);
+            continue;
+          }
+        }
+        if (!toExecute.includes(conn.toId)) toExecute.push(conn.toId);
+      }
+    }
+
+    const elapsed = Date.now() - startTime;
+    setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🎯 Workflow complete (${elapsed}ms)`]);
+    showNotification(`Workflow executed in ${elapsed}ms`);
   };
 
   // Gemini AI Analysis for bot telemetry errors
@@ -979,6 +1212,19 @@ Respond ONLY in JSON matching this format:
                           strokeWidth="1.5"
                           className="animate-pulse"
                         />
+                        {/* Port label for IF/Switch nodes */}
+                        {conn.fromPort && (
+                          <text
+                            x={(x1 + x2) / 2 - 6}
+                            y={(y1 + y2) / 2 - 8}
+                            fill={conn.fromPort === 'true' ? '#00e5a0' : '#ff6b6b'}
+                            fontSize="9"
+                            fontWeight="bold"
+                            fontFamily="monospace"
+                          >
+                            {conn.fromPort === 'true' ? 'T✔' : 'F✘'}
+                          </text>
+                        )}
                       </g>
                     );
                   })}
@@ -1535,7 +1781,12 @@ Respond ONLY in JSON matching this format:
                   {(() => {
                     const matched = nodes.find(n => n.id === selectedLogNodeId);
                     if (!matched) return <div className="text-[#4a5068]">Select a node from above to examine output state logs.</div>;
-                    const displayData = matched.config.mockOutputs || { status: 'idle', details: 'Node connected but not triggered in the latest execution session.' };
+                    const output = nodeOutputs[selectedLogNodeId];
+                    const displayData = output
+                      ? output.status === 'error'
+                        ? { status: 'error', error: output.error, duration: output.duration ? `${output.duration}ms` : undefined }
+                        : { status: output.status, output: output.output, tokens: output.tokens, duration: output.duration ? `${output.duration}ms` : undefined, timestamp: new Date(output.timestamp).toLocaleTimeString() }
+                      : { status: 'idle', message: 'Execute the workflow to see output.' };
                     return (
                       <pre className="bg-[#020306] p-4 rounded text-xs text-emerald-400 border border-emerald-500/10 overflow-x-auto max-h-36">
                         {JSON.stringify(displayData, null, 2)}
@@ -1628,6 +1879,7 @@ Respond ONLY in JSON matching this format:
             <div className="space-y-1.5">
               <h5 className="text-[9px] text-[#ffad33] uppercase tracking-widest font-bold">// Integration Apps</h5>
               {[
+                { type: 'http', label: 'HTTP Request', desc: 'Send HTTP requests to external APIs and services' },
                 { type: 'slack', label: 'Slack Sender', desc: 'Post payloads or errors directly to workspace' },
                 { type: 'gmail', label: 'Gmail Dispatcher', desc: 'Auto-send summary alerts or notifications' },
                 { type: 'github', label: 'GitHub Sync', desc: 'Sync bug issues from repository events' }
@@ -1652,6 +1904,8 @@ Respond ONLY in JSON matching this format:
               <h5 className="text-[9px] text-[#00e5a0] uppercase tracking-widest font-bold">// Core logic</h5>
               {[
                 { type: 'code', label: 'JS Code Engine', desc: 'Sandbox runtime to manipulate JSON logs' },
+                { type: 'if', label: 'IF Condition', desc: 'Branch workflow: True/False based on condition' },
+                { type: 'switch', label: 'Switch', desc: 'Multi-way branching with multiple case values' },
                 { type: 'filter', label: 'Data Filter', desc: 'Branch execution path based on JSON schema variables' },
                 { type: 'router', label: 'Variable Router', desc: 'Directs outputs depending on server status triggers' }
               ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
@@ -1912,6 +2166,151 @@ Respond ONLY in JSON matching this format:
                     />
                   </div>
                 )}
+
+                {/* Code node sandbox */}
+                {selectedNode.type === 'code' && (
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-[#00e5a0] uppercase font-bold">JavaScript Code</label>
+                    <p className="text-[8px] text-[#5e6686] mb-1">Define <span className="text-[#b8ff57]">$input</span> and return a value. Built-in: <span className="text-[#b8ff57]">JSON</span>, <span className="text-[#b8ff57]">Math</span>, <span className="text-[#b8ff57]">Date</span>, <span className="text-[#b8ff57]">console</span>.</p>
+                    <textarea
+                      value={selectedNode.config.code || '// Transform input\nconst data = JSON.parse($input);\nreturn JSON.stringify({ result: data }, null, 2);'}
+                      onChange={(e) => setSelectedNode({
+                        ...selectedNode,
+                        config: { ...selectedNode.config, code: e.target.value }
+                      })}
+                      className="w-full h-48 bg-[#0d0e1b] border border-[#1f2235] rounded p-3 text-xs text-[#00f5d4] focus:outline-none focus:border-[#b8ff57] font-mono"
+                      spellCheck={false}
+                    />
+                  </div>
+                )}
+
+                {/* IF Condition config */}
+                {selectedNode.type === 'if' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Left Value (path or static)</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.conditionLeft || '$input'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, conditionLeft: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Operator</label>
+                      <select
+                        value={selectedNode.config.conditionOperator || 'equals'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, conditionOperator: e.target.value as any }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      >
+                        <option value="equals">Equals (===)</option>
+                        <option value="not_equals">Not Equals (!==)</option>
+                        <option value="greater_than">Greater Than (&gt;)</option>
+                        <option value="less_than">Less Than (&lt;)</option>
+                        <option value="contains">Contains</option>
+                        <option value="starts_with">Starts With</option>
+                        <option value="regex">Regex Match</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Right Value (comparison)</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.conditionRight || 'true'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, conditionRight: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                    </div>
+                    <div className="pt-2 border-t border-[#1f2235]/20">
+                      <label className="text-[9px] text-[#5e6686] uppercase font-bold mb-2 block">Outgoing Connections</label>
+                      {connections.filter(c => c.fromId === selectedNode.id).map(conn => {
+                        const target = nodes.find(n => n.id === conn.toId);
+                        return (
+                          <div key={conn.id} className="flex items-center gap-2 mb-1 text-[10px]">
+                            <span className="text-[#808eb5]">→ {target?.label || conn.toId}</span>
+                            <select
+                              value={conn.fromPort || 'true'}
+                              onChange={(e) => setConnections(prev => prev.map(c => c.id === conn.id ? { ...c, fromPort: e.target.value as 'true' | 'false' } : c))}
+                              className="bg-[#141624] border border-[#1f2235] rounded text-[9px] px-1 py-0.5 text-white"
+                            >
+                              <option value="true">True</option>
+                              <option value="false">False</option>
+                            </select>
+                          </div>
+                        );
+                      })}
+                      {connections.filter(c => c.fromId === selectedNode.id).length === 0 && (
+                        <p className="text-[9px] text-[#4a5068]">Connect this node to others, then assign True/False ports here.</p>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {/* HTTP Request parameters */}
+                {selectedNode.type === 'http' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">Method</label>
+                      <select
+                        value={selectedNode.config.httpMethod || 'GET'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, httpMethod: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      >
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                        <option value="PUT">PUT</option>
+                        <option value="PATCH">PATCH</option>
+                        <option value="DELETE">DELETE</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">URL</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.httpUrl || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, httpUrl: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">Headers (JSON)</label>
+                      <textarea
+                        value={selectedNode.config.httpHeaders || '{}'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, httpHeaders: e.target.value }
+                        })}
+                        className="w-full h-20 bg-[#141624] border border-[#1f2235] rounded p-2 text-xs text-white focus:outline-none focus:border-[#b8ff57] font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">Request Body</label>
+                      <textarea
+                        value={selectedNode.config.httpBody || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, httpBody: e.target.value }
+                        })}
+                        className="w-full h-24 bg-[#141624] border border-[#1f2235] rounded p-2 text-xs text-white focus:outline-none focus:border-[#b8ff57] font-mono"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Action Buttons */}
@@ -1932,35 +2331,48 @@ Respond ONLY in JSON matching this format:
                 <span>Output Response Payload</span>
               </h4>
               <p className="text-[9px] text-[#5e6686] leading-relaxed mb-4">
-                Raw preview data representing the outputs from the latest test run of this node.
+                {nodeOutputs[selectedNode.id]?.status === 'running' ? 'Executing...' : 'Output from the latest test run of this node.'}
               </p>
 
               <div className="flex-1 flex flex-col gap-3">
                 <pre className="flex-1 bg-[#020306] border border-[#1f2235]/40 rounded p-4 text-xs text-[#00f5d4] font-mono overflow-y-auto whitespace-pre-wrap">
-                  {JSON.stringify(selectedNode.config.mockOutputs || { status: 'success', data: 'Test simulation complete.' }, null, 2)}
+                  {(() => {
+                    const o = nodeOutputs[selectedNode.id];
+                    if (!o) return JSON.stringify({ status: 'idle', message: 'Click "Execute Single Node Test" to run.' }, null, 2);
+                    if (o.status === 'running') return JSON.stringify({ status: 'running' }, null, 2);
+                    if (o.status === 'error') return JSON.stringify({ status: 'error', error: o.error }, null, 2);
+                    return JSON.stringify({
+                      status: 'success',
+                      output: o.output,
+                      tokens: o.tokens,
+                      duration: o.duration ? `${o.duration}ms` : undefined,
+                      timestamp: new Date(o.timestamp).toLocaleTimeString(),
+                    }, null, 2);
+                  })()}
                 </pre>
 
                 <button
-                  onClick={() => {
-                    const randomVal = Math.random().toString(36).substring(7);
-                    const updatedNode = {
-                      ...selectedNode,
-                      config: {
-                        ...selectedNode.config,
-                        mockOutputs: {
-                          timestamp: Date.now(),
-                          status: 'success',
-                          evaluation: 'Manual single node testing evaluated positive.',
-                          hashToken: `tok_${randomVal}`
-                        }
-                      }
-                    };
-                    setSelectedNode(updatedNode);
-                    showNotification('Test run executed!');
+                  onClick={async () => {
+                    if (selectedNode.category !== 'ai') {
+                      showNotification('Only AI nodes can be tested individually');
+                      return;
+                    }
+                    const input = Object.entries(selectedNode.config.mockInputs || { payload: '{}' })
+                      .map(([k, v]) => `${k}: ${v}`)
+                      .join('\n');
+                    setNodeOutputs(prev => ({ ...prev, [selectedNode.id]: { status: 'running', output: '', timestamp: Date.now() } }));
+                    try {
+                      const result = await executeAINode(selectedNode, input);
+                      setNodeOutputs(prev => ({ ...prev, [selectedNode.id]: { status: 'success', output: result.output, timestamp: Date.now(), tokens: result.tokens } }));
+                      showNotification('Test run completed!');
+                    } catch (err: any) {
+                      setNodeOutputs(prev => ({ ...prev, [selectedNode.id]: { status: 'error', output: '', timestamp: Date.now(), error: err.message } }));
+                      showNotification('Test run failed');
+                    }
                   }}
                   className="w-full py-2 border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/15 text-emerald-400 font-mono text-xs uppercase tracking-wider rounded transition-colors"
                 >
-                  ⚡ Execute Single Node Test
+                  {nodeOutputs[selectedNode.id]?.status === 'running' ? '⏳ Running...' : '⚡ Execute Single Node Test'}
                 </button>
               </div>
             </div>
