@@ -13,6 +13,8 @@ import { MemoryNode, NexusEvent, ModelName } from '../types';
 import { cn, getOpenRouterModel } from '../utils';
 import { CATALOG_MODELS } from './ModelsCatalog';
 import { GoogleGenAI } from '@google/genai';
+import { WORKFLOW_TEMPLATES, WorkflowTemplate } from '../data/workflowTemplates';
+import { resolveExpressions, resolveConfig, ExpressionContext } from '../utils/expressionParser';
 
 // Types for workflow node graph
 export interface WorkflowNode {
@@ -29,6 +31,8 @@ export interface WorkflowNode {
     code?: string;
     webhookUrl?: string;
     scheduleInterval?: string;
+    scheduleEnabled?: boolean;
+    cronExpression?: string;
     model?: ModelName;
     systemPrompt?: string;
     temperature?: number;
@@ -71,6 +75,22 @@ interface AIWonderCanvasProps {
   currentTab?: 'aiwonder' | 'training' | 'creation';
   onTabChange?: (tab: 'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'training' | 'creation') => void;
 }
+
+// Helper: convert schedule interval string to milliseconds
+const scheduleIntervalToMs = (interval: string): number => {
+  const map: Record<string, number> = {
+    'every_1_min': 60 * 1000,
+    'every_5_min': 5 * 60 * 1000,
+    'every_15_min': 15 * 60 * 1000,
+    'every_30_min': 30 * 60 * 1000,
+    'every_1_hour': 60 * 60 * 1000,
+    'every_2_hour': 2 * 60 * 60 * 1000,
+    'every_6_hour': 6 * 60 * 60 * 1000,
+    'every_12_hour': 12 * 60 * 60 * 1000,
+    'every_day': 24 * 60 * 60 * 1000,
+  };
+  return map[interval] || 15 * 60 * 1000;
+};
 
 // Default initial nodes
 const INITIAL_NODES: WorkflowNode[] = [
@@ -177,7 +197,7 @@ export function AIWonderCanvas({
   onTabChange
 }: AIWonderCanvasProps) {
   // Navigation sidebar state (dashboard level)
-  const [activeSidebarTab, setActiveSidebarTab] = useState<'workflows' | 'credentials' | 'executions' | 'variables' | 'insights'>('workflows');
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'workflows' | 'templates' | 'credentials' | 'executions' | 'variables' | 'insights'>('workflows');
   
   // Workflow core states
   const [nodes, setNodes] = useState<WorkflowNode[]>(INITIAL_NODES);
@@ -505,6 +525,36 @@ export function AIWonderCanvas({
     showNotification(`${label} added to grid`);
   };
 
+  // Import a template workflow
+  const handleImportTemplate = (template: WorkflowTemplate) => {
+    const offsetX = Math.round(100 - panX / scale);
+    const offsetY = Math.round(100 - panY / scale);
+    const newNodes = template.nodes.map(n => ({
+      id: `${n.id}-${Math.random().toString(36).substr(2, 6)}`,
+      type: n.type,
+      category: n.category as WorkflowNode['category'],
+      label: n.label,
+      x: n.x + offsetX,
+      y: n.y + offsetY,
+      config: {
+        title: n.label,
+        description: `Imported from template: ${template.name}`,
+        ...n.config
+      }
+    }));
+    const idMap = new Map(template.nodes.map((n, i) => [n.id, newNodes[i].id]));
+    const newConns = template.connections.map(c => ({
+      id: `conn-${Math.random().toString(36).substr(2, 9)}`,
+      fromId: idMap.get(c.fromId)!,
+      toId: idMap.get(c.toId)!,
+      fromPort: c.fromPort as 'true' | 'false' | undefined
+    }));
+    setNodes(prev => [...prev, ...newNodes]);
+    setConnections(prev => [...prev, ...newConns]);
+    setActiveSidebarTab('workflows');
+    showNotification(`Imported template: ${template.name}`);
+  };
+
   // Handle spawning a compiled agent from the Creation Form
   const handleSpawnCompiledAgent = () => {
     if (!creationAgentName.trim()) {
@@ -722,6 +772,19 @@ export function AIWonderCanvas({
       let lastError: any = null;
       let nodeSuccess = false;
 
+      // Resolve expressions in config
+      const exprCtx: ExpressionContext = {
+        $node: Object.fromEntries(
+          nodes.map(n => [n.label, { data: nodeOutputs[n.id]?.output, output: nodeOutputs[n.id]?.output || '' }])
+        ),
+        $json: (() => { try { return JSON.parse(input); } catch { return input; } })(),
+        $items: [],
+        $index: 0,
+        $now: new Date().toISOString(),
+        $today: new Date().toLocaleDateString(),
+      };
+      const cfg = resolveConfig(node.config, exprCtx);
+
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         const nodeStart = Date.now();
         if (attempt > 0) {
@@ -730,7 +793,7 @@ export function AIWonderCanvas({
         }
         try {
           if (node.category === 'ai' && node.type === 'agent') {
-            const result = await executeAINode(node, input);
+            const result = await executeAINode({ ...node, config: cfg }, input);
             setNodeOutputs(prev => ({
               ...prev,
               [nodeId]: { status: 'success', output: result.output, timestamp: Date.now(), duration: Date.now() - nodeStart, tokens: result.tokens }
@@ -933,6 +996,33 @@ export function AIWonderCanvas({
   }
   };
 
+  // Ref + effect for schedule/cron triggers
+  const scheduleTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const executeWorkflowRef = useRef(handleExecuteWorkflow);
+  executeWorkflowRef.current = handleExecuteWorkflow;
+
+  useEffect(() => {
+    for (const timer of scheduleTimersRef.current.values()) clearInterval(timer);
+    scheduleTimersRef.current.clear();
+    for (const node of nodes) {
+      if ((node.type === 'schedule' || node.type === 'cron') && node.config.scheduleEnabled !== false) {
+        const interval = node.type === 'schedule'
+          ? scheduleIntervalToMs(node.config.scheduleInterval || 'every_15_min')
+          : 15 * 60 * 1000;
+        const timer = setInterval(() => {
+          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏰ Schedule triggered: ${node.label}`]);
+          executeWorkflowRef.current();
+        }, interval);
+        scheduleTimersRef.current.set(node.id, timer);
+        setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏰ Schedule active: ${node.label} (every ${Math.round(interval/1000/60)}min)`]);
+      }
+    }
+    return () => {
+      for (const timer of scheduleTimersRef.current.values()) clearInterval(timer);
+      scheduleTimersRef.current.clear();
+    };
+  }, [nodes]);
+
   // Gemini AI Analysis for bot telemetry errors
   const handleFetchAIAnalysis = async (ev: NexusEvent) => {
     if (aiExplanations[ev.id]) return;
@@ -1020,6 +1110,7 @@ Respond ONLY in JSON matching this format:
         <nav className="flex-1 p-3 space-y-1">
           {[
             { id: 'workflows', label: 'Workflows', icon: Layers },
+            { id: 'templates', label: 'Templates', icon: Download },
             { id: 'credentials', label: 'Credentials', icon: Key },
             { id: 'executions', label: 'Executions', icon: Clock },
             { id: 'variables', label: 'Variables', icon: Sliders },
@@ -1069,6 +1160,66 @@ Respond ONLY in JSON matching this format:
           </div>
         </div>
       </aside>
+
+      {/* SIDEBAR PANEL (Templates, Credentials, etc.) */}
+      {activeSidebarTab !== 'workflows' && (
+        <div className="w-72 border-r border-[#1f2235]/40 bg-[#0c0e17] flex flex-col overflow-hidden shrink-0">
+          {/* Templates panel */}
+          {activeSidebarTab === 'templates' && (
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <h3 className="text-[10px] text-[#b8ff57] uppercase tracking-widest font-bold">Workflow Templates</h3>
+              <p className="text-[8px] text-[#4a5068]">Import a pre-built workflow to get started quickly.</p>
+              {WORKFLOW_TEMPLATES.map(tpl => (
+                <div
+                  key={tpl.id}
+                  className="bg-[#141624]/60 border border-[#1f2235]/40 rounded p-3 space-y-2 hover:border-[#b8ff57]/30 transition-all cursor-pointer group"
+                  onClick={() => handleImportTemplate(tpl)}
+                >
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-[11px] font-bold text-[#e8eaf6] group-hover:text-[#b8ff57]">{tpl.name}</h4>
+                    <Download className="w-3 h-3 text-[#4a5068] group-hover:text-[#b8ff57]" />
+                  </div>
+                  <p className="text-[8px] text-[#4a5068]">{tpl.description}</p>
+                  <div className="text-[7px] text-[#5e6686]">{tpl.nodeCount} nodes</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Credentials panel */}
+          {activeSidebarTab === 'credentials' && (
+            <div className="flex-1 overflow-y-auto p-4">
+              <h3 className="text-[10px] text-[#b8ff57] uppercase tracking-widest font-bold">Credentials</h3>
+              <p className="text-[7px] text-[#4a5068] mt-1">No credentials saved yet. Credential storage will be added in a future update.</p>
+            </div>
+          )}
+          {/* Executions panel */}
+          {activeSidebarTab === 'executions' && (
+            <div className="flex-1 overflow-y-auto p-4">
+              <h3 className="text-[10px] text-[#b8ff57] uppercase tracking-widest font-bold">Execution History</h3>
+              <div className="mt-2 space-y-1">
+                {executionLog.length === 0 && <p className="text-[7px] text-[#4a5068]">No executions yet. Run a workflow to see history.</p>}
+                {executionLog.map((log, i) => (
+                  <div key={i} className="text-[8px] text-[#808eb5] font-mono truncate border-b border-[#1f2235]/10 py-1">{log}</div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Variables panel */}
+          {activeSidebarTab === 'variables' && (
+            <div className="flex-1 overflow-y-auto p-4">
+              <h3 className="text-[10px] text-[#b8ff57] uppercase tracking-widest font-bold">Variables</h3>
+              <p className="text-[7px] text-[#4a5068] mt-1">Workflow variables will be available in a future update.</p>
+            </div>
+          )}
+          {/* Insights panel */}
+          {activeSidebarTab === 'insights' && (
+            <div className="flex-1 overflow-y-auto p-4">
+              <h3 className="text-[10px] text-[#b8ff57] uppercase tracking-widest font-bold">Insights</h3>
+              <p className="text-[7px] text-[#4a5068] mt-1">{nodes.length} nodes, {connections.length} connections in current workflow.</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* CORE WORKSPACE PANEL */}
       <div className="flex-1 flex flex-col min-w-0 relative">
@@ -1951,6 +2102,7 @@ Respond ONLY in JSON matching this format:
               <h5 className="text-[9px] text-[#5b5eff] uppercase tracking-widest font-bold">// Trigger Nodes</h5>
               {[
                 { type: 'webhook', label: 'Webhook Trigger', desc: 'Accept incoming webhook payload events' },
+                { type: 'schedule', label: 'Schedule Trigger', desc: 'Run on interval: every N minutes/hours/days' },
                 { type: 'cron', label: 'Cron Scheduler', desc: 'Trigger sequences on absolute cron patterns' },
                 { type: 'chat_listener', label: 'Chat Event Listener', desc: 'Runs workflow upon channel prompt triggers' }
               ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
@@ -2506,6 +2658,93 @@ Respond ONLY in JSON matching this format:
                         <option value="all">Output all items (JSON array)</option>
                       </select>
                       <p className="text-[8px] text-[#4a5068]">Splits array data from upstream.</p>
+                    </div>
+                  </>
+                )}
+
+                {/* Schedule Trigger parameters */}
+                {selectedNode.type === 'schedule' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#5b5eff] uppercase font-bold">Interval</label>
+                      <select
+                        value={selectedNode.config.scheduleInterval || 'every_15_min'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, scheduleInterval: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      >
+                        <option value="every_1_min">Every 1 minute</option>
+                        <option value="every_5_min">Every 5 minutes</option>
+                        <option value="every_15_min">Every 15 minutes</option>
+                        <option value="every_30_min">Every 30 minutes</option>
+                        <option value="every_1_hour">Every hour</option>
+                        <option value="every_2_hour">Every 2 hours</option>
+                        <option value="every_6_hour">Every 6 hours</option>
+                        <option value="every_12_hour">Every 12 hours</option>
+                        <option value="every_day">Every day</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#5b5eff] uppercase font-bold">Status</label>
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className={`w-2 h-2 rounded-full ${selectedNode.config.scheduleEnabled !== false ? 'bg-emerald-500' : 'bg-[#4a5068]'}`} />
+                        <span className="text-[#808eb5]">{selectedNode.config.scheduleEnabled !== false ? 'Active' : 'Paused'}</span>
+                        <button
+                          onClick={() => setSelectedNode({
+                            ...selectedNode,
+                            config: { ...selectedNode.config, scheduleEnabled: selectedNode.config.scheduleEnabled === false ? true : false }
+                          })}
+                          className="ml-auto text-[9px] text-[#5b5eff] hover:text-[#b8ff57]"
+                        >
+                          Toggle
+                        </button>
+                      </div>
+                    </div>
+                    {/* Show next execution times */}
+                    <div className="space-y-1 pt-2 border-t border-[#1f2235]/20">
+                      <label className="text-[9px] text-[#5e6686] uppercase font-bold">Next Executions</label>
+                      {(() => {
+                        const ms = scheduleIntervalToMs(selectedNode.config.scheduleInterval || 'every_15_min');
+                        const times = [Date.now() + ms, Date.now() + ms * 2, Date.now() + ms * 3, Date.now() + ms * 4, Date.now() + ms * 5];
+                        return times.map((t, i) => (
+                          <div key={i} className="text-[8px] text-[#4a5068] font-mono">{new Date(t).toLocaleString()}</div>
+                        ));
+                      })()}
+                    </div>
+                  </>
+                )}
+
+                {/* Cron Trigger parameters */}
+                {selectedNode.type === 'cron' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#5b5eff] uppercase font-bold">Cron Expression</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.cronExpression || '*/15 * * * *'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, cronExpression: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                        placeholder="*/15 * * * *"
+                      />
+                      <p className="text-[8px] text-[#4a5068]">Standard cron format: minute hour day month weekday</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${selectedNode.config.scheduleEnabled !== false ? 'bg-emerald-500' : 'bg-[#4a5068]'}`} />
+                      <span className="text-[9px] text-[#808eb5]">{selectedNode.config.scheduleEnabled !== false ? 'Active' : 'Paused'}</span>
+                      <button
+                        onClick={() => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, scheduleEnabled: selectedNode.config.scheduleEnabled === false ? true : false }
+                        })}
+                        className="ml-auto text-[9px] text-[#5b5eff] hover:text-[#b8ff57]"
+                      >
+                        Toggle
+                      </button>
                     </div>
                   </>
                 )}
