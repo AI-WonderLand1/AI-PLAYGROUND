@@ -42,6 +42,9 @@ export interface WorkflowNode {
     conditionOperator?: 'equals' | 'not_equals' | 'greater_than' | 'less_than' | 'contains' | 'starts_with' | 'regex';
     conditionLeft?: string;
     conditionRight?: string;
+    retryCount?: number;
+    retryDelay?: number;
+    continueOnError?: boolean;
     mockInputs?: Record<string, string>;
     mockOutputs?: Record<string, any>;
     useInTrainingSet?: boolean;
@@ -704,53 +707,62 @@ export function AIWonderCanvas({
 
     setNodeOutputs({});
 
-    for (const nodeId of toExecute) {
-      const node = nodes.find(n => n.id === nodeId);
-      if (!node || executed.has(nodeId)) continue;
-      executed.add(nodeId);
+    try {
+      for (const nodeId of toExecute) {
+        const node = nodes.find(n => n.id === nodeId);
+        if (!node || executed.has(nodeId)) continue;
+        executed.add(nodeId);
 
       setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ▶ Executing: ${node.label}...`]);
       setExecutingNodeIds(prev => new Set(prev).add(nodeId));
 
-      const nodeStart = Date.now();
-      try {
-        const input = getNodeInput(nodeId);
+      const input = getNodeInput(nodeId);
+      const maxRetries = node.config.retryCount ?? 0;
+      const retryDelay = node.config.retryDelay ?? 1000;
+      let lastError: any = null;
+      let nodeSuccess = false;
 
-        if (node.category === 'ai' && node.type === 'agent') {
-          const result = await executeAINode(node, input);
-          setNodeOutputs(prev => ({
-            ...prev,
-            [nodeId]: { status: 'success', output: result.output, timestamp: Date.now(), duration: Date.now() - nodeStart, tokens: result.tokens }
-          }));
-          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — ${result.tokens ? result.tokens + ' tokens' : 'success'} (${Date.now() - nodeStart}ms)`]);
-        } else if (node.type === 'if') {
-          const op = node.config.conditionOperator || 'equals';
-          const left = node.config.conditionLeft || '$input';
-          const right = node.config.conditionRight || 'true';
-          const leftVal = left === '$input' ? input : left;
-          let result = false;
-          try {
-            switch (op) {
-              case 'equals': result = leftVal === right; break;
-              case 'not_equals': result = leftVal !== right; break;
-              case 'greater_than': result = parseFloat(leftVal) > parseFloat(right); break;
-              case 'less_than': result = parseFloat(leftVal) < parseFloat(right); break;
-              case 'contains': result = leftVal.includes(right); break;
-              case 'starts_with': result = leftVal.startsWith(right); break;
-              case 'regex': result = new RegExp(right).test(leftVal); break;
-            }
-          } catch { result = false; }
-          const branch = result ? 'true' : 'false';
-          setNodeOutputs(prev => ({
-            ...prev,
-            [nodeId]: { status: 'success', output: JSON.stringify({ branch, condition: `${leftVal} ${op} ${right} = ${result}` }), timestamp: Date.now(), duration: Date.now() - nodeStart }
-          }));
-          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔀 ${node.label} → ${branch === 'true' ? 'True' : 'False'} (${Date.now() - nodeStart}ms)`]);
-        } else if (node.type === 'code') {
-          const code = node.config.code;
-          if (!code) throw new Error('Code node has no JavaScript to execute');
-          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 💻 Executing code for ${node.label}...`]);
-          try {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const nodeStart = Date.now();
+        if (attempt > 0) {
+          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ♻️ Retry ${attempt}/${maxRetries} for ${node.label}...`]);
+          await new Promise(r => setTimeout(r, retryDelay));
+        }
+        try {
+          if (node.category === 'ai' && node.type === 'agent') {
+            const result = await executeAINode(node, input);
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output: result.output, timestamp: Date.now(), duration: Date.now() - nodeStart, tokens: result.tokens }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — ${result.tokens ? result.tokens + ' tokens' : 'success'} (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'if') {
+            const op = node.config.conditionOperator || 'equals';
+            const left = node.config.conditionLeft || '$input';
+            const right = node.config.conditionRight || 'true';
+            const leftVal = left === '$input' ? input : left;
+            let result = false;
+            try {
+              switch (op) {
+                case 'equals': result = leftVal === right; break;
+                case 'not_equals': result = leftVal !== right; break;
+                case 'greater_than': result = parseFloat(leftVal) > parseFloat(right); break;
+                case 'less_than': result = parseFloat(leftVal) < parseFloat(right); break;
+                case 'contains': result = leftVal.includes(right); break;
+                case 'starts_with': result = leftVal.startsWith(right); break;
+                case 'regex': result = new RegExp(right).test(leftVal); break;
+              }
+            } catch { result = false; }
+            const branch = result ? 'true' : 'false';
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output: JSON.stringify({ branch, condition: `${leftVal} ${op} ${right} = ${result}` }), timestamp: Date.now(), duration: Date.now() - nodeStart }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔀 ${node.label} → ${branch === 'true' ? 'True' : 'False'} (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'code') {
+            const code = node.config.code;
+            if (!code) throw new Error('Code node has no JavaScript to execute');
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 💻 Executing code for ${node.label}...`]);
             const fn = new Function('$input', '$output', '$console', code);
             const mockConsole = { log: (...args: any[]) => console.log('[CodeNode]', ...args) };
             const result = fn(input, {}, mockConsole);
@@ -760,56 +772,132 @@ export function AIWonderCanvas({
               [nodeId]: { status: 'success', output: outputStr, timestamp: Date.now(), duration: Date.now() - nodeStart }
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — executed (${Date.now() - nodeStart}ms)`]);
-          } catch (codeErr: any) {
+          } else if (node.type === 'http') {
+            const url = node.config.httpUrl;
+            if (!url) throw new Error('HTTP URL is required');
+            const method = node.config.httpMethod || 'GET';
+            let headers: Record<string, string> = {};
+            try { headers = JSON.parse(node.config.httpHeaders || '{}'); } catch {}
+            const body = ['POST', 'PUT', 'PATCH'].includes(method) ? node.config.httpBody : undefined;
+
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🌐 ${method} ${url}`]);
+            const res = await fetch(url, { method, headers, body });
+            const responseText = await res.text();
+            const output = JSON.stringify({
+              status: res.status,
+              statusText: res.statusText,
+              headers: Object.fromEntries(res.headers.entries()),
+              body: responseText,
+            }, null, 2);
+
             setNodeOutputs(prev => ({
               ...prev,
-              [nodeId]: { status: 'error', output: '', timestamp: Date.now(), error: codeErr.message }
+              [nodeId]: { status: res.ok ? 'success' : 'error', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
             }));
-            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ ${node.label} — ${codeErr.message}`]);
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — HTTP ${res.status} (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'loop_for') {
+            const raw = node.config.loopItems || '[1, 2, 3]';
+            let items: any[];
+            try { items = JSON.parse(raw); }
+            catch { items = raw.split(',').map(s => s.trim()); }
+            if (!Array.isArray(items)) items = [items];
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output: JSON.stringify(items, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔁 ${node.label} — ${items.length} items (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'loop_while') {
+            const conditionExpr = node.config.whileCondition || '$input < 5';
+            const maxIter = node.config.whileMaxIterations ?? 100;
+            let currentInput = input;
+            const outputs: any[] = [];
+            let iterations = 0;
+            let conditionTrue = true;
+            while (iterations < maxIter) {
+              try {
+                const fn = new Function('$input', `return Boolean(${conditionExpr})`);
+                conditionTrue = fn(currentInput);
+              } catch { conditionTrue = false; }
+              if (!conditionTrue) break;
+              outputs.push(currentInput);
+              iterations++;
+              currentInput = `iteration-${iterations}`;
+            }
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output: JSON.stringify({ iterations, outputs }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔁 ${node.label} — ${iterations} iterations (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'merge') {
+            const mode = node.config.mergeMode || 'array';
+            const upstreamConns = connections.filter(c => c.toId === nodeId);
+            const upstreamOutputs = upstreamConns
+              .map(c => nodeOutputs[c.fromId]?.output)
+              .filter(Boolean);
+            let merged = input;
+            if (mode === 'array') {
+              const arrays = upstreamOutputs.map(o => { try { return JSON.parse(o); } catch { return [o]; } }).flat();
+              merged = JSON.stringify(arrays, null, 2);
+            } else if (mode === 'object') {
+              const objs = upstreamOutputs.map(o => { try { return JSON.parse(o); } catch { return {}; } });
+              merged = JSON.stringify(Object.assign({}, ...objs), null, 2);
+            }
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output: merged, timestamp: Date.now(), duration: Date.now() - nodeStart }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔗 ${node.label} — merged ${upstreamOutputs.length} inputs (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'split') {
+            const mode = node.config.splitMode || 'first';
+            let items: any[] = [];
+            try { items = JSON.parse(input); } catch { items = [input]; }
+            if (!Array.isArray(items)) items = [items];
+            const output = mode === 'first' ? JSON.stringify(items[0], null, 2) : JSON.stringify(items, null, 2);
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✂️ ${node.label} — ${items.length} items, mode: ${mode} (${Date.now() - nodeStart}ms)`]);
+          } else {
+            // Non-AI/HTTP/code nodes: pass input through as output
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output: input, timestamp: Date.now(), duration: Date.now() - nodeStart }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — completed (${Date.now() - nodeStart}ms)`]);
           }
-        } else if (node.type === 'http') {
-          const url = node.config.httpUrl;
-          if (!url) throw new Error('HTTP URL is required');
-          const method = node.config.httpMethod || 'GET';
-          let headers: Record<string, string> = {};
-          try { headers = JSON.parse(node.config.httpHeaders || '{}'); } catch {}
-          const body = ['POST', 'PUT', 'PATCH'].includes(method) ? node.config.httpBody : undefined;
-
-          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🌐 ${method} ${url}`]);
-          const res = await fetch(url, { method, headers, body });
-          const responseText = await res.text();
-          const output = JSON.stringify({
-            status: res.status,
-            statusText: res.statusText,
-            headers: Object.fromEntries(res.headers.entries()),
-            body: responseText,
-          }, null, 2);
-
+          nodeSuccess = true;
+        } catch (err: any) {
+          lastError = err;
           setNodeOutputs(prev => ({
             ...prev,
-            [nodeId]: { status: res.ok ? 'success' : 'error', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
+            [nodeId]: { status: 'error', output: '', timestamp: Date.now(), duration: Date.now() - nodeStart, error: err.message }
           }));
-          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — HTTP ${res.status} (${Date.now() - nodeStart}ms)`]);
-        } else {
-          // Non-AI/HTTP/code nodes: pass input through as output
-          setNodeOutputs(prev => ({
-            ...prev,
-            [nodeId]: { status: 'success', output: input, timestamp: Date.now(), duration: Date.now() - nodeStart }
-          }));
-          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — completed (${Date.now() - nodeStart}ms)`]);
+          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ ${node.label} — ${err.message} (${Date.now() - nodeStart}ms)`]);
+        } finally {
+          setExecutingNodeIds(prev => {
+            const next = new Set(prev);
+            next.delete(nodeId);
+            return next;
+          });
         }
-      } catch (err: any) {
-        setNodeOutputs(prev => ({
-          ...prev,
-          [nodeId]: { status: 'error', output: '', timestamp: Date.now(), duration: Date.now() - nodeStart, error: err.message }
-        }));
-        setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ ${node.label} — ${err.message} (${Date.now() - nodeStart}ms)`]);
-      } finally {
-        setExecutingNodeIds(prev => {
-          const next = new Set(prev);
-          next.delete(nodeId);
-          return next;
-        });
+
+        if (nodeSuccess) break; // exit retry loop on success
+
+        // All retries exhausted — decide whether to continue or abort
+        if (node.config.continueOnError) {
+          setNodeOutputs(prev => ({
+            ...prev,
+            [nodeId]: { ...prev[nodeId], status: 'warning' }
+          }));
+          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⚠️ ${node.label} — continuing despite error (${lastError?.message})`]);
+          break;
+        }
+      } // end retry loop
+
+      // If error was NOT handled by continueOnError, stop the workflow
+      if (!nodeSuccess && !node.config.continueOnError) {
+        throw lastError || new Error(`Node "${node.label}" failed`);
       }
 
       // Propagate output to downstream nodes (respect port routing for IF nodes)
@@ -832,11 +920,17 @@ export function AIWonderCanvas({
         }
         if (!toExecute.includes(conn.toId)) toExecute.push(conn.toId);
       }
-    }
+    } // end for
 
     const elapsed = Date.now() - startTime;
     setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🎯 Workflow complete (${elapsed}ms)`]);
     showNotification(`Workflow executed in ${elapsed}ms`);
+  } catch (err: any) {
+    setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🛑 Workflow aborted — ${err.message}`]);
+    showNotification(`Workflow failed: ${err.message}`, 'error');
+  } finally {
+    setExecutingNodeIds(new Set());
+  }
   };
 
   // Gemini AI Analysis for bot telemetry errors
@@ -1906,7 +2000,11 @@ Respond ONLY in JSON matching this format:
                 { type: 'code', label: 'JS Code Engine', desc: 'Sandbox runtime to manipulate JSON logs' },
                 { type: 'if', label: 'IF Condition', desc: 'Branch workflow: True/False based on condition' },
                 { type: 'switch', label: 'Switch', desc: 'Multi-way branching with multiple case values' },
+                { type: 'loop_for', label: 'Loop (For)', desc: 'Iterate over an array of items, executing downstream per item' },
+                { type: 'loop_while', label: 'Loop (While)', desc: 'Repeat downstream execution while condition is true' },
                 { type: 'filter', label: 'Data Filter', desc: 'Branch execution path based on JSON schema variables' },
+                { type: 'merge', label: 'Merge', desc: 'Combine multiple upstream inputs into one (array/object/text)' },
+                { type: 'split', label: 'Split', desc: 'Split array data into individual items for downstream' },
                 { type: 'router', label: 'Variable Router', desc: 'Directs outputs depending on server status triggers' }
               ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
               .map(node => (
@@ -2067,6 +2165,53 @@ Respond ONLY in JSON matching this format:
                     })}
                     className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white focus:outline-none focus:border-[#b8ff57]"
                   />
+                </div>
+
+                {/* Error handling & retry — common to all nodes */}
+                <div className="pt-3 border-t border-[#1f2235]/20 space-y-2">
+                  <h6 className="text-[8px] text-[#ff6b6b] uppercase tracking-widest font-bold">Error Handling</h6>
+                  <div className="flex items-center gap-3">
+                    <label className="text-[9px] text-slate-400 uppercase font-bold">Max Retries</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="5"
+                      value={selectedNode.config.retryCount ?? 0}
+                      onChange={(e) => setSelectedNode({
+                        ...selectedNode,
+                        config: { ...selectedNode.config, retryCount: parseInt(e.target.value) || 0 }
+                      })}
+                      className="w-16 bg-[#141624] border border-[#1f2235] rounded text-xs px-2 py-1 text-white"
+                    />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="text-[9px] text-slate-400 uppercase font-bold">Retry Delay (ms)</label>
+                    <input
+                      type="number"
+                      min="100"
+                      max="10000"
+                      step="100"
+                      value={selectedNode.config.retryDelay ?? 1000}
+                      onChange={(e) => setSelectedNode({
+                        ...selectedNode,
+                        config: { ...selectedNode.config, retryDelay: parseInt(e.target.value) || 1000 }
+                      })}
+                      className="w-20 bg-[#141624] border border-[#1f2235] rounded text-xs px-2 py-1 text-white"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="continue-on-error"
+                      checked={!!selectedNode.config.continueOnError}
+                      onChange={(e) => setSelectedNode({
+                        ...selectedNode,
+                        config: { ...selectedNode.config, continueOnError: e.target.checked }
+                      })}
+                      className="rounded border-[#1f2235] bg-[#0c0e17] text-[#ff6b6b] focus:ring-0 w-3 h-3 cursor-pointer"
+                    />
+                    <label htmlFor="continue-on-error" className="text-[9px] text-slate-400 uppercase cursor-pointer">Continue on error</label>
+                  </div>
                 </div>
 
                 {/* AI Node parameters */}
@@ -2251,6 +2396,116 @@ Respond ONLY in JSON matching this format:
                       {connections.filter(c => c.fromId === selectedNode.id).length === 0 && (
                         <p className="text-[9px] text-[#4a5068]">Connect this node to others, then assign True/False ports here.</p>
                       )}
+                    </div>
+                  </>
+                )}
+
+                {/* Loop (For) parameters */}
+                {selectedNode.type === 'loop_for' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Items Array (JSON or comma-separated)</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.loopItems || '[1, 2, 3]'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, loopItems: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                        placeholder='[1, 2, 3] or "a, b, c"'
+                      />
+                      <p className="text-[8px] text-[#4a5068]">Each item is passed as input to downstream nodes.</p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Variable Name</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.loopVarName || 'item'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, loopVarName: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                        placeholder="item"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Loop (While) parameters */}
+                {selectedNode.type === 'loop_while' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Condition (JS expression using $input)</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.whileCondition || '$input < 5'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, whileCondition: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                        placeholder="$input < 5"
+                      />
+                      <p className="text-[8px] text-[#4a5068]">The loop body executes while this evaluates to true.</p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Max Iterations (safety limit)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="1000"
+                        value={selectedNode.config.whileMaxIterations ?? 100}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, whileMaxIterations: parseInt(e.target.value) || 100 }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Merge parameters */}
+                {selectedNode.type === 'merge' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Merge Mode</label>
+                      <select
+                        value={selectedNode.config.mergeMode || 'array'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, mergeMode: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      >
+                        <option value="array">Array (concatenate arrays)</option>
+                        <option value="object">Object (merge properties)</option>
+                        <option value="text">Text (join with newlines)</option>
+                      </select>
+                      <p className="text-[8px] text-[#4a5068]">Combines all upstream connection outputs.</p>
+                    </div>
+                  </>
+                )}
+
+                {/* Split parameters */}
+                {selectedNode.type === 'split' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Split Mode</label>
+                      <select
+                        value={selectedNode.config.splitMode || 'first'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, splitMode: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      >
+                        <option value="first">Output first item (passthrough)</option>
+                        <option value="all">Output all items (JSON array)</option>
+                      </select>
+                      <p className="text-[8px] text-[#4a5068]">Splits array data from upstream.</p>
                     </div>
                   </>
                 )}
