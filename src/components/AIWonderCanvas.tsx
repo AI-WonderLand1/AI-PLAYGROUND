@@ -872,19 +872,15 @@ export function AIWonderCanvas({
           } else if (node.type === 'loop_while') {
             const conditionExpr = cfg.whileCondition || '$input < 5';
             const maxIter = cfg.whileMaxIterations ?? 100;
-            let currentInput = input;
             const outputs: any[] = [];
             let iterations = 0;
-            let conditionTrue = true;
             while (iterations < maxIter) {
               try {
                 const fn = new Function('$input', `return Boolean(${conditionExpr})`);
-                conditionTrue = fn(currentInput);
-              } catch { conditionTrue = false; }
-              if (!conditionTrue) break;
-              outputs.push(currentInput);
+                if (!fn(input)) break;
+              } catch { break; }
+              outputs.push(`iteration-${iterations + 1}`);
               iterations++;
-              currentInput = `iteration-${iterations}`;
             }
             setNodeOutputs(prev => ({
               ...prev,
@@ -1000,28 +996,35 @@ export function AIWonderCanvas({
   const scheduleTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const executeWorkflowRef = useRef(handleExecuteWorkflow);
   executeWorkflowRef.current = handleExecuteWorkflow;
+  const prevScheduleKeyRef = useRef('');
 
   useEffect(() => {
+    const relevant = nodes.filter(n => n.type === 'schedule' || n.type === 'cron');
+    const scheduleKey = relevant.map(n =>
+      `${n.id}:${n.config.scheduleInterval}:${String(n.config.scheduleEnabled !== false)}`
+    ).join('|');
+    if (scheduleKey === prevScheduleKeyRef.current) return;
+    prevScheduleKeyRef.current = scheduleKey;
+
     for (const timer of scheduleTimersRef.current.values()) clearInterval(timer);
     scheduleTimersRef.current.clear();
-    for (const node of nodes) {
-      if ((node.type === 'schedule' || node.type === 'cron') && node.config.scheduleEnabled !== false) {
-        const interval = node.type === 'schedule'
-          ? scheduleIntervalToMs(node.config.scheduleInterval || 'every_15_min')
-          : 15 * 60 * 1000;
-        const timer = setInterval(() => {
-          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏰ Schedule triggered: ${node.label}`]);
-          executeWorkflowRef.current();
-        }, interval);
-        scheduleTimersRef.current.set(node.id, timer);
-        setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏰ Schedule active: ${node.label} (every ${Math.round(interval/1000/60)}min)`]);
-      }
+    for (const node of relevant) {
+      if (node.config.scheduleEnabled === false) continue;
+      const interval = node.type === 'schedule'
+        ? scheduleIntervalToMs(node.config.scheduleInterval || 'every_15_min')
+        : 15 * 60 * 1000;
+      const timer = setInterval(() => {
+        setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏰ Schedule triggered: ${node.label}`]);
+        executeWorkflowRef.current();
+      }, interval);
+      scheduleTimersRef.current.set(node.id, timer);
+      setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏰ Schedule active: ${node.label} (every ${Math.round(interval/1000/60)}min)`]);
     }
     return () => {
       for (const timer of scheduleTimersRef.current.values()) clearInterval(timer);
       scheduleTimersRef.current.clear();
     };
-  }, [nodes]);
+  });
 
   // Gemini AI Analysis for bot telemetry errors
   const handleFetchAIAnalysis = async (ev: NexusEvent) => {

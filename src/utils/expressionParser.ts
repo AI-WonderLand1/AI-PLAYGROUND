@@ -11,8 +11,8 @@ export function resolveExpressions(template: string, ctx: ExpressionContext): st
   return template.replace(/\{\{(.+?)\}\}/g, (_, expr: string) => {
     try {
       return evaluateExpression(expr.trim(), ctx);
-    } catch {
-      return `{{${expr}}}`;
+    } catch (e) {
+      return `{{ERROR: ${expr} (${e})}}`;
     }
   });
 }
@@ -71,7 +71,7 @@ function evaluateExpression(expr: string, ctx: ExpressionContext): string {
       `return (${expr});`
     )(ctx.$json, ctx.$items, ctx.$index, ctx.$now, ctx.$today);
     return result === undefined || result === null ? '' : String(result);
-  } catch {
-    return `[invalid expression: ${expr}]`;
+  } catch (e) {
+    return `[invalid expression: ${expr} (${e})]`;
   }
 }
