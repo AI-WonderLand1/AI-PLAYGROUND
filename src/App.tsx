@@ -132,11 +132,11 @@ export default function App() {
   const [modules, setModules] = useState<AIModule[]>([
     {
       id: '1',
-      name: 'Agent Alpha',
+      name: 'Alice',
       training: [],
       config: {
         model: 'gemini-3-flash-preview',
-        systemInstruction: 'You are Agent Alpha, a precise and direct assistant. You leverage Project Intelligence Memory Core to answer project decisions.',
+        systemInstruction: 'You are Alice, a precise and direct assistant. You leverage Project Intelligence Memory Core to answer project decisions.',
         temperature: 0.5,
         topP: 0.9,
         topK: 40,
@@ -145,11 +145,11 @@ export default function App() {
     },
     {
       id: '2',
-      name: 'Agent Beta',
+      name: 'Simple Rick',
       training: [],
       config: {
         model: 'gemini-3.1-pro-preview',
-        systemInstruction: 'You are Agent Beta, a comprehensive assistant focused on code generation. You always formulate precise debug instructions.',
+        systemInstruction: 'You are Simple Rick, a comprehensive assistant focused on code generation. You always formulate precise debug instructions.',
         temperature: 0.8,
         topP: 0.95,
         topK: 40,
@@ -408,7 +408,7 @@ export default function App() {
               <div className="border-t border-[#1f2235]/40 pt-6 space-y-4">
                 <h3 className="text-sm font-bold text-[#E4E3E0] uppercase tracking-wider">// Orchestration Framework</h3>
                 <p className="leading-relaxed">
-                  Unlike traditional monolithic chats, Wonderland lets you build multi-agent cascades. You can configure up to 8 parallel agent nodes (Agent Alpha, Agent Beta, etc.), each bound to completely swappable model configurations (e.g. Sakana Fugu, Alibaba HappyHorse, Z.ai GLM, or Anthropic Claude Fable).
+                  Unlike traditional monolithic chats, Wonderland lets you build multi-agent cascades. You can configure up to 8 parallel agent nodes (Alice, Simple Rick, etc.), each bound to completely swappable model configurations (e.g. Sakana Fugu, Alibaba HappyHorse, Z.ai GLM, or Anthropic Claude Fable).
                 </p>
               </div>
 

@@ -53,8 +53,8 @@ const MODEL_SPEND = [
 ];
 
 const APP_SPEND = [
-  { app: 'Agent Alpha (Routing Sandbox)', spend: 62.10, share: 41 },
-  { app: 'Agent Beta (Developer Assistant)', spend: 45.14, share: 30 },
+  { app: 'Alice (Routing Sandbox)', spend: 62.10, share: 41 },
+  { app: 'Simple Rick (Developer Assistant)', spend: 45.14, share: 30 },
   { app: 'Visual Dreammaker Canvas', spend: 35.10, share: 23 },
   { app: 'CLI Integration Endpoint', spend: 9.00, share: 6 },
 ];
