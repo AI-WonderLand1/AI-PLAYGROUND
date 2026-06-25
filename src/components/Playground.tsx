@@ -56,7 +56,6 @@ export function Playground({ module }: PlaygroundProps) {
 
       const isImgModel = config.model.includes('image') || config.model.includes('happyhorse') || config.model.includes('banana') || config.model.includes('riverflow');
       let finalModelResponse = '';
-      let usedFallback = false;
       let usedOpenRouter = false;
 
       // Try OpenRouter first (unified gateway for all models) with streaming
@@ -64,13 +63,7 @@ export function Playground({ module }: PlaygroundProps) {
       const openrouterModel = getOpenRouterModel(config.model);
       if (openrouterKey && openrouterModel && !isImgModel) {
         const msgTimestamp = Date.now();
-        let removePlaceholder = true;
         try {
-          setMessages(prev => [...prev, {
-            role: 'model',
-            content: '',
-            timestamp: msgTimestamp,
-          }]);
           setIsStreaming(true);
 
           const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -97,7 +90,6 @@ export function Playground({ module }: PlaygroundProps) {
             const errData = await res.json().catch(() => ({}));
             console.warn(`OpenRouter API error (${res.status}): ${errData?.error?.message || 'Unknown'}, falling through.`);
           } else {
-            removePlaceholder = false;
             const reader = res.body?.getReader();
             if (!reader) throw new Error('No response body');
 
@@ -105,6 +97,7 @@ export function Playground({ module }: PlaygroundProps) {
             let buffer = '';
             contentRef.current = '';
             lastUpdateRef.current = 0;
+            let messageCreated = false;
 
             while (true) {
               const { done, value } = await reader.read();
@@ -123,16 +116,25 @@ export function Playground({ module }: PlaygroundProps) {
                     const delta = parsed.choices?.[0]?.delta?.content;
                     if (delta) {
                       contentRef.current += delta;
-                      const now = Date.now();
-                      if (now - lastUpdateRef.current > 50) {
-                        lastUpdateRef.current = now;
-                        setMessages(prev => {
-                          const updated = [...prev];
-                          const last = { ...updated[updated.length - 1] };
-                          last.content = contentRef.current;
-                          updated[updated.length - 1] = last;
-                          return updated;
-                        });
+                      if (!messageCreated) {
+                        messageCreated = true;
+                        setMessages(prev => [...prev, {
+                          role: 'model',
+                          content: contentRef.current,
+                          timestamp: msgTimestamp,
+                        }]);
+                      } else {
+                        const now = Date.now();
+                        if (now - lastUpdateRef.current > 50) {
+                          lastUpdateRef.current = now;
+                          setMessages(prev => {
+                            const updated = [...prev];
+                            const last = { ...updated[updated.length - 1] };
+                            last.content = contentRef.current;
+                            updated[updated.length - 1] = last;
+                            return updated;
+                          });
+                        }
                       }
                     }
                     if (parsed.usage) {
@@ -145,15 +147,21 @@ export function Playground({ module }: PlaygroundProps) {
               }
             }
 
-            // Final update with complete content
-            setMessages(prev => {
-              const updated = [...prev];
-              const last = { ...updated[updated.length - 1] };
-              last.content = contentRef.current || 'Empty response received.';
-              last.timestamp = msgTimestamp;
-              updated[updated.length - 1] = last;
-              return updated;
-            });
+            if (messageCreated) {
+              setMessages(prev => {
+                const updated = [...prev];
+                const last = { ...updated[updated.length - 1] };
+                last.content = contentRef.current;
+                updated[updated.length - 1] = last;
+                return updated;
+              });
+            } else {
+              setMessages(prev => [...prev, {
+                role: 'model',
+                content: 'Empty response received.',
+                timestamp: msgTimestamp,
+              }]);
+            }
 
             usedOpenRouter = true;
           }
@@ -161,13 +169,6 @@ export function Playground({ module }: PlaygroundProps) {
           console.warn("OpenRouter request failed, falling through to direct providers.", err);
         } finally {
           setIsStreaming(false);
-          if (removePlaceholder) {
-            setMessages(prev => {
-              const idx = prev.findIndex(m => m.timestamp === msgTimestamp && m.role === 'model' && m.content === '');
-              if (idx !== -1) return [...prev.slice(0, idx), ...prev.slice(idx + 1)];
-              return prev;
-            });
-          }
         }
       }
 
@@ -199,11 +200,8 @@ export function Playground({ module }: PlaygroundProps) {
             const data = await res.json();
             finalModelResponse = data.choices[0]?.message?.content || 'Empty response received.';
           } catch (err: any) {
-            console.warn("OpenAI API call failed, falling back to simulation.", err);
-            usedFallback = true;
+            console.warn("OpenAI API call failed.", err);
           }
-        } else {
-          usedFallback = true;
         }
       } else if (!usedOpenRouter && !isImgModel && config.model.startsWith('claude-')) {
         const anthropicKey = localStorage.getItem('mc_key_anthropic');
@@ -236,11 +234,8 @@ export function Playground({ module }: PlaygroundProps) {
             const data = await res.json();
             finalModelResponse = data.content?.[0]?.text || 'Empty response received.';
           } catch (err: any) {
-            console.warn("Anthropic API call failed, falling back to simulation.", err);
-            usedFallback = true;
+            console.warn("Anthropic API call failed.", err);
           }
-        } else {
-          usedFallback = true;
         }
       } else if (!usedOpenRouter && !isImgModel && config.model.startsWith('llama-')) {
         const groqKey = localStorage.getItem('mc_key_groq');
@@ -270,18 +265,15 @@ export function Playground({ module }: PlaygroundProps) {
             const data = await res.json();
             finalModelResponse = data.choices[0]?.message?.content || 'Empty response received.';
           } catch (err: any) {
-            console.warn("Groq API call failed, falling back to simulation.", err);
-            usedFallback = true;
+            console.warn("Groq API call failed.", err);
           }
-        } else {
-          usedFallback = true;
         }
       }
 
       if (usedOpenRouter) {
         setIsSpeaking(true);
         setTimeout(() => setIsSpeaking(false), 3000);
-      } else if (usedFallback || (!finalModelResponse && !isImgModel)) {
+      } else if (!finalModelResponse && !isImgModel) {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
         
         if (isImgModel) {
@@ -308,17 +300,11 @@ export function Playground({ module }: PlaygroundProps) {
             timestamp: Date.now(),
           }]);
         } else {
-          // Fallback or Gemini primary
-          let systemMsg = config.systemInstruction;
-          if (usedFallback) {
-            systemMsg = `[IMPORTANT instructions: You are simulating the target model "${config.model}". Adhere to this model's characteristics and style.]\n\n${config.systemInstruction}`;
-          }
-
           const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: config.model.startsWith('gemini-') ? config.model : 'gemini-3-flash-preview',
             contents: prompt,
             config: {
-              systemInstruction: systemMsg,
+              systemInstruction: config.systemInstruction,
               temperature: config.temperature,
               topP: config.topP,
               topK: config.topK,
@@ -326,9 +312,6 @@ export function Playground({ module }: PlaygroundProps) {
           });
 
           let resultText = response.text || "No response received.";
-          if (usedFallback) {
-            resultText = `> ⚠️ **Simulated Preview Mode** (Provider Key for **${config.model}** not configured. Falling back to Gemini Core simulation.)\n\n${resultText}`;
-          }
 
           setMessages(prev => [...prev, {
             role: 'model',
