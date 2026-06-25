@@ -800,9 +800,9 @@ export function AIWonderCanvas({
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — ${result.tokens ? result.tokens + ' tokens' : 'success'} (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'if') {
-            const op = node.config.conditionOperator || 'equals';
-            const left = node.config.conditionLeft || '$input';
-            const right = node.config.conditionRight || 'true';
+            const op = cfg.conditionOperator || 'equals';
+            const left = cfg.conditionLeft || '$input';
+            const right = cfg.conditionRight || 'true';
             const leftVal = left === '$input' ? input : left;
             let result = false;
             try {
@@ -823,7 +823,7 @@ export function AIWonderCanvas({
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔀 ${node.label} → ${branch === 'true' ? 'True' : 'False'} (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'code') {
-            const code = node.config.code;
+            const code = cfg.code;
             if (!code) throw new Error('Code node has no JavaScript to execute');
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 💻 Executing code for ${node.label}...`]);
             const fn = new Function('$input', '$output', '$console', code);
@@ -836,12 +836,12 @@ export function AIWonderCanvas({
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — executed (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'http') {
-            const url = node.config.httpUrl;
+            const url = cfg.httpUrl;
             if (!url) throw new Error('HTTP URL is required');
-            const method = node.config.httpMethod || 'GET';
+            const method = cfg.httpMethod || 'GET';
             let headers: Record<string, string> = {};
-            try { headers = JSON.parse(node.config.httpHeaders || '{}'); } catch {}
-            const body = ['POST', 'PUT', 'PATCH'].includes(method) ? node.config.httpBody : undefined;
+            try { headers = JSON.parse(cfg.httpHeaders || '{}'); } catch {}
+            const body = ['POST', 'PUT', 'PATCH'].includes(method) ? cfg.httpBody : undefined;
 
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🌐 ${method} ${url}`]);
             const res = await fetch(url, { method, headers, body });
@@ -859,7 +859,7 @@ export function AIWonderCanvas({
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — HTTP ${res.status} (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'loop_for') {
-            const raw = node.config.loopItems || '[1, 2, 3]';
+            const raw = cfg.loopItems || '[1, 2, 3]';
             let items: any[];
             try { items = JSON.parse(raw); }
             catch { items = raw.split(',').map(s => s.trim()); }
@@ -870,8 +870,8 @@ export function AIWonderCanvas({
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔁 ${node.label} — ${items.length} items (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'loop_while') {
-            const conditionExpr = node.config.whileCondition || '$input < 5';
-            const maxIter = node.config.whileMaxIterations ?? 100;
+            const conditionExpr = cfg.whileCondition || '$input < 5';
+            const maxIter = cfg.whileMaxIterations ?? 100;
             let currentInput = input;
             const outputs: any[] = [];
             let iterations = 0;
@@ -892,7 +892,7 @@ export function AIWonderCanvas({
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔁 ${node.label} — ${iterations} iterations (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'merge') {
-            const mode = node.config.mergeMode || 'array';
+            const mode = cfg.mergeMode || 'array';
             const upstreamConns = connections.filter(c => c.toId === nodeId);
             const upstreamOutputs = upstreamConns
               .map(c => nodeOutputs[c.fromId]?.output)
@@ -911,7 +911,7 @@ export function AIWonderCanvas({
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔗 ${node.label} — merged ${upstreamOutputs.length} inputs (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'split') {
-            const mode = node.config.splitMode || 'first';
+            const mode = cfg.splitMode || 'first';
             let items: any[] = [];
             try { items = JSON.parse(input); } catch { items = [input]; }
             if (!Array.isArray(items)) items = [items];
@@ -948,7 +948,7 @@ export function AIWonderCanvas({
         if (nodeSuccess) break; // exit retry loop on success
 
         // All retries exhausted — decide whether to continue or abort
-        if (node.config.continueOnError) {
+        if (cfg.continueOnError) {
           setNodeOutputs(prev => ({
             ...prev,
             [nodeId]: { ...prev[nodeId], status: 'warning' }
@@ -959,7 +959,7 @@ export function AIWonderCanvas({
       } // end retry loop
 
       // If error was NOT handled by continueOnError, stop the workflow
-      if (!nodeSuccess && !node.config.continueOnError) {
+      if (!nodeSuccess && !cfg.continueOnError) {
         throw lastError || new Error(`Node "${node.label}" failed`);
       }
 
@@ -2806,6 +2806,31 @@ Respond ONLY in JSON matching this format:
                   </>
                 )}
               </div>
+
+              {/* Expression Preview */}
+              {(() => {
+                const exprFields = Object.entries(selectedNode.config).filter(([_, v]) => typeof v === 'string' && v.includes('{{'));
+                if (exprFields.length === 0) return null;
+                const previewCtx: ExpressionContext = {
+                  $node: Object.fromEntries(nodes.map(n => [n.label, { data: nodeOutputs[n.id]?.output, output: nodeOutputs[n.id]?.output || '' }])),
+                  $json: '{"example": "value"}',
+                  $items: [],
+                  $index: 0,
+                  $now: new Date().toISOString(),
+                  $today: new Date().toLocaleDateString(),
+                };
+                return (
+                  <div className="pt-4 border-t border-[#1f2235]/20 space-y-2">
+                    <h6 className="text-[8px] text-[#b8ff57] uppercase tracking-widest font-bold">Expression Preview</h6>
+                    {exprFields.map(([key, val]) => (
+                      <div key={key} className="text-[8px]">
+                        <span className="text-[#5e6686]">{key}: </span>
+                        <span className="text-emerald-400">{resolveExpressions(val as string, previewCtx)}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
 
               {/* Action Buttons */}
               <div className="pt-6 flex gap-3 select-none">
