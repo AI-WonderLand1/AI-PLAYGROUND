@@ -1,6 +1,23 @@
 import { useState, useEffect } from 'react';
-import { Key, Eye, EyeOff, Check, X, ShieldAlert } from 'lucide-react';
+import { Key, Eye, EyeOff, Check, X, ShieldAlert, Copy, Sparkles } from 'lucide-react';
 import { cn } from '../utils';
+
+function generateMasterKey(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const segments = [8, 4, 4, 4, 12];
+  return 'wl-' + segments.map(len =>
+    Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+  ).join('-');
+}
+
+function getOrCreateMasterKey(): string {
+  let key = localStorage.getItem('wonderland_master_key');
+  if (!key) {
+    key = generateMasterKey();
+    localStorage.setItem('wonderland_master_key', key);
+  }
+  return key;
+}
 
 interface ApiKeysModalProps {
   isOpen: boolean;
@@ -8,6 +25,9 @@ interface ApiKeysModalProps {
 }
 
 export function ApiKeysModal({ isOpen, onClose }: ApiKeysModalProps) {
+  const [masterKey, setMasterKey] = useState('');
+  const [keyCopied, setKeyCopied] = useState(false);
+
   const [openaiKey, setOpenaiKey] = useState('');
   const [anthropicKey, setAnthropicKey] = useState('');
   const [groqKey, setGroqKey] = useState('');
@@ -20,6 +40,7 @@ export function ApiKeysModal({ isOpen, onClose }: ApiKeysModalProps) {
 
   useEffect(() => {
     if (isOpen) {
+      setMasterKey(getOrCreateMasterKey());
       setOpenaiKey(localStorage.getItem('mc_key_openai') || '');
       setAnthropicKey(localStorage.getItem('mc_key_anthropic') || '');
       setGroqKey(localStorage.getItem('mc_key_groq') || '');
@@ -59,11 +80,48 @@ export function ApiKeysModal({ isOpen, onClose }: ApiKeysModalProps) {
 
         <div className="flex items-center gap-2 text-[#E4E3E0] mb-2">
           <Key className="w-5 h-5 text-[#b8ff57]" />
-          <h3 className="font-serif italic text-sm uppercase tracking-wider">Provider Keys (Device-Only)</h3>
+          <h3 className="font-serif italic text-sm uppercase tracking-wider">Your Wonderland Key</h3>
         </div>
-        <p className="text-[10px] text-[#555] font-mono uppercase tracking-widest mb-6">
-          Stored locally in your browser. Sent directly to API endpoints.
+        <p className="text-[10px] text-[#555] font-mono uppercase tracking-widest mb-5">
+          One key for all models. Automatically generated — unique to you.
         </p>
+
+        {/* Master Key Display */}
+        <div className="bg-[#0a0a0a] border border-[#b8ff57]/30 p-4 mb-6 rounded-sm">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-[#b8ff57]" />
+              <span className="text-[9px] font-mono text-[#b8ff57] uppercase tracking-widest font-bold">Master Key</span>
+            </div>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(masterKey);
+                setKeyCopied(true);
+                setTimeout(() => setKeyCopied(false), 2000);
+              }}
+              className="flex items-center gap-1 text-[9px] font-mono text-[#888] hover:text-[#b8ff57] transition-colors"
+            >
+              {keyCopied ? <Check className="w-3 h-3 text-[#b8ff57]" /> : <Copy className="w-3 h-3" />}
+              <span>{keyCopied ? 'COPIED' : 'COPY'}</span>
+            </button>
+          </div>
+          <div className="font-mono text-xs text-[#E4E3E0] bg-[#0c0d12] border border-[#1f2235] px-3 py-2.5 tracking-wider select-all break-all">
+            {masterKey}
+          </div>
+          <p className="text-[8px] text-[#555] font-mono mt-2 leading-relaxed">
+            This key identifies your session across all AI providers. Models route through the Wonderland unified gateway using your unique identifier.
+          </p>
+        </div>
+
+        <div className="border-t border-[#1f2235] pt-5 mb-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Key className="w-3.5 h-3.5 text-[#555]" />
+            <span className="text-[9px] font-mono text-[#555] uppercase tracking-widest">Provider Keys (Optional Fallback)</span>
+          </div>
+          <p className="text-[8px] text-[#555] font-mono mb-4">
+            Only needed if you want direct API calls instead of Wonderland routing.
+          </p>
+        </div>
 
         <div className="space-y-6">
           {/* OpenAI Key */}
@@ -175,7 +233,7 @@ export function ApiKeysModal({ isOpen, onClose }: ApiKeysModalProps) {
         <div className="mt-6 flex gap-3 p-3 border border-[#2a2a2a] bg-[#0d0d0d] rounded-sm items-start">
           <ShieldAlert className="w-4 h-4 text-[#ffc147] shrink-0 mt-0.5" />
           <p className="text-[9px] text-[#555] font-mono leading-relaxed uppercase">
-            If a key is missing for your selected provider, the Playground will automatically fall back to Gemini model preview simulation to maintain robust execution context.
+            Your Wonderland Master Key handles all model routing by default. Provider keys are only needed if you want to bypass the unified gateway for direct API access.
           </p>
         </div>
 

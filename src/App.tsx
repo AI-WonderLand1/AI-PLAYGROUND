@@ -77,6 +77,19 @@ export default function App() {
   const [topSearch, setTopSearch] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const topSearchRef = useRef<HTMLInputElement>(null);
+  const [masterKeyShort, setMasterKeyShort] = useState('');
+
+  useEffect(() => {
+    let key = localStorage.getItem('wonderland_master_key');
+    if (!key) {
+      const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+      key = 'wl-' + [8, 4, 4, 4, 12].map(len =>
+        Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+      ).join('-');
+      localStorage.setItem('wonderland_master_key', key);
+    }
+    setMasterKeyShort(key.slice(0, 14) + '..');
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -310,8 +323,14 @@ export default function App() {
           })}
         </nav>
 
-        {/* Far Right: Org Badge */}
+        {/* Far Right: Master Key Badge + Org Badge */}
         <div className="flex items-center gap-3">
+          {masterKeyShort && (
+            <div className="hidden sm:flex items-center gap-1.5 border border-[#b8ff57]/20 bg-[#b8ff57]/5 px-2.5 py-1 rounded-sm text-[8px] font-mono text-[#b8ff57] tracking-wider">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#b8ff57] animate-pulse" />
+              <span>{masterKeyShort}</span>
+            </div>
+          )}
           <div className="border border-[#5b5eff]/40 bg-[#5b5eff]/10 px-3 py-1 rounded-full text-[9px] font-mono tracking-wider font-extrabold text-[#b8ff57] uppercase shadow-[0_0_12px_rgba(91,94,255,0.15)]">
             AI-WONDERLAND
           </div>
