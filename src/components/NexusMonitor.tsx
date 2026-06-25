@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Eye, ShieldAlert, Cpu, Trash2, Code, Key, Copy, Check, Terminal, ExternalLink, HelpCircle } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { NexusEvent } from '../types';
-import { cn } from '../utils';
+import { cn, getOpenRouterModel } from '../utils';
 
 interface NexusMonitorProps {
   events: NexusEvent[];
@@ -120,15 +120,33 @@ export function NexusMonitor({ events, onClearEvents, onDismissEvent }: NexusMon
   };
 
   const handleFetchAIAnalysis = async (ev: NexusEvent) => {
-    if (aiExplanations[ev.id]) return; // already loading/loaded
+    if (aiExplanations[ev.id]) return;
 
     setAiExplanations(prev => ({
       ...prev,
       [ev.id]: { explanation: '', fix: '', loading: true }
     }));
 
-    try {
+    const callLLM = async (prompt: string) => {
+      const openrouterKey = localStorage.getItem('mc_key_openrouter');
+      if (openrouterKey) {
+        const model = getOpenRouterModel('gemini-3-flash-preview') || 'google/gemini-2.0-flash-001';
+        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openrouterKey}` },
+          body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.3 }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          return data.choices?.[0]?.message?.content || '';
+        }
+      }
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+      const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
+      return response.text || '';
+    };
+
+    try {
       const prompt = `You are an elite DevOps & Site Reliability Engineer. 
 Analyze the following runtime client-side event/error logs:
 - Message: ${ev.message}
@@ -142,13 +160,7 @@ Please respond with direct actionable feedback. Limit explanation to 2-3 sentenc
 Respond ONLY with a JSON parsable string having the fields "explanation" and "fix". No other wrapper text or markdown:
 {"explanation": "Cause and impact of error...", "fix": "Code snippet or diagnostic instructions"}`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-      });
-
-      const textResponse = response.text || '';
-      // Parse JSON from text response cleanly
+      const textResponse = await callLLM(prompt);
       const cleaned = textResponse.replace(/```json|```/g, '').trim();
       const parsed = JSON.parse(cleaned);
 
@@ -161,11 +173,11 @@ Respond ONLY with a JSON parsable string having the fields "explanation" and "fi
         }
       }));
     } catch (err) {
-      console.error('Error analyzing via Gemini:', err);
+      console.error('Error analyzing via AI:', err);
       setAiExplanations(prev => ({
         ...prev,
         [ev.id]: {
-          explanation: 'Unable to query AI explanation. Verify your GEMINI_API_KEY environment variable setup.',
+          explanation: 'Unable to query AI explanation.',
           fix: 'Code: ' + (err instanceof Error ? err.message : 'Analysis error'),
           loading: false,
         }

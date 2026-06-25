@@ -1035,8 +1035,27 @@ export function AIWonderCanvas({
       [ev.id]: { explanation: '', fix: '', loading: true }
     }));
 
-    try {
+    const callLLM = async (prompt: string) => {
+      const openrouterKey = localStorage.getItem('mc_key_openrouter');
+      if (openrouterKey) {
+        const model = getOpenRouterModel('gemini-3-flash-preview') || 'google/gemini-2.0-flash-001';
+        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openrouterKey}` },
+          body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.3 }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          return data.choices?.[0]?.message?.content || '';
+        }
+      }
+      // Fallback to Gemini
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+      const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
+      return response.text || '';
+    };
+
+    try {
       const prompt = `You are an elite Site Reliability Engineer. 
 Analyze the following runtime client-side event/error log:
 - Message: ${ev.message}
@@ -1050,12 +1069,7 @@ Limit response to 2 short sentences. Offer a precise diagnostic fix code snippet
 Respond ONLY in JSON matching this format:
 {"explanation": "Brief cause and impact", "fix": "Code block or CLI fix"}`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-      });
-
-      const textResponse = response.text || '';
+      const textResponse = await callLLM(prompt);
       const cleaned = textResponse.replace(/```json|```/g, '').trim();
       const parsed = JSON.parse(cleaned);
 
@@ -1071,7 +1085,7 @@ Respond ONLY in JSON matching this format:
       setAiExplanations(prev => ({
         ...prev,
         [ev.id]: {
-          explanation: 'Could not access AI diagnostics. Please verify your GEMINI_API_KEY.',
+          explanation: 'Could not access AI diagnostics.',
           fix: 'Code: ' + (err instanceof Error ? err.message : 'Unknown error'),
           loading: false,
         }

@@ -282,7 +282,8 @@ export default function App() {
         {/* Center/Right: Navigation Links */}
         <nav className="hidden lg:flex items-center gap-1">
           {[
-            { id: 'models', label: 'Home', activeOn: ['models'], subView: 'directory' },
+            { id: 'models', label: 'Home', activeOn: ['models'], subView: 'directory', externalUrl: 'https://dreammakerhub.website/homepage' },
+            { id: 'dashboard', label: 'Dashboard', activeOn: [], externalUrl: 'https://dreammakerhub.website/dashboard' },
             { id: 'models', label: 'Models', activeOn: ['models'], subView: 'directory' },
             { id: 'playground', label: 'Fusion', activeOn: [] },
             { id: 'playground', label: 'Chat', activeOn: ['playground'] },
@@ -305,6 +306,10 @@ export default function App() {
               <button
                 key={idx}
                 onClick={() => {
+                  if ((link as any).externalUrl) {
+                    window.open((link as any).externalUrl, '_blank');
+                    return;
+                  }
                   setCurrentTab(link.id as any);
                   if (link.subView) {
                     setModelsCatalogSubView(link.subView as any);
