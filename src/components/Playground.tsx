@@ -16,6 +16,10 @@ export function Playground({ module }: PlaygroundProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [usageInfo, setUsageInfo] = useState<{prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cost?: number} | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const contentRef = useRef('');
+  const lastUpdateRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const config = module.config;
@@ -55,11 +59,20 @@ export function Playground({ module }: PlaygroundProps) {
       let usedFallback = false;
       let usedOpenRouter = false;
 
-      // Try OpenRouter first (unified gateway for all models)
+      // Try OpenRouter first (unified gateway for all models) with streaming
       const openrouterKey = localStorage.getItem('mc_key_openrouter');
       const openrouterModel = getOpenRouterModel(config.model);
       if (openrouterKey && openrouterModel && !isImgModel) {
+        const msgTimestamp = Date.now();
+        let removePlaceholder = true;
         try {
+          setMessages(prev => [...prev, {
+            role: 'model',
+            content: '',
+            timestamp: msgTimestamp,
+          }]);
+          setIsStreaming(true);
+
           const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -76,18 +89,85 @@ export function Playground({ module }: PlaygroundProps) {
               temperature: config.temperature,
               top_p: config.topP,
               max_tokens: config.maxOutputTokens || 4096,
+              stream: true,
             })
           });
-          if (res.ok) {
-            const data = await res.json();
-            finalModelResponse = data.choices[0]?.message?.content || 'Empty response received.';
-            usedOpenRouter = true;
-          } else {
+
+          if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
             console.warn(`OpenRouter API error (${res.status}): ${errData?.error?.message || 'Unknown'}, falling through.`);
+          } else {
+            removePlaceholder = false;
+            const reader = res.body?.getReader();
+            if (!reader) throw new Error('No response body');
+
+            const decoder = new TextDecoder();
+            let buffer = '';
+            contentRef.current = '';
+            lastUpdateRef.current = 0;
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  const data = line.slice(6).trim();
+                  if (data === '[DONE]') continue;
+                  try {
+                    const parsed = JSON.parse(data);
+                    const delta = parsed.choices?.[0]?.delta?.content;
+                    if (delta) {
+                      contentRef.current += delta;
+                      const now = Date.now();
+                      if (now - lastUpdateRef.current > 50) {
+                        lastUpdateRef.current = now;
+                        setMessages(prev => {
+                          const updated = [...prev];
+                          const last = { ...updated[updated.length - 1] };
+                          last.content = contentRef.current;
+                          updated[updated.length - 1] = last;
+                          return updated;
+                        });
+                      }
+                    }
+                    if (parsed.usage) {
+                      setUsageInfo(parsed.usage);
+                    }
+                  } catch {
+                    // Skip malformed SSE lines
+                  }
+                }
+              }
+            }
+
+            // Final update with complete content
+            setMessages(prev => {
+              const updated = [...prev];
+              const last = { ...updated[updated.length - 1] };
+              last.content = contentRef.current || 'Empty response received.';
+              last.timestamp = msgTimestamp;
+              updated[updated.length - 1] = last;
+              return updated;
+            });
+
+            usedOpenRouter = true;
           }
         } catch (err: any) {
           console.warn("OpenRouter request failed, falling through to direct providers.", err);
+        } finally {
+          setIsStreaming(false);
+          if (removePlaceholder) {
+            setMessages(prev => {
+              const idx = prev.findIndex(m => m.timestamp === msgTimestamp && m.role === 'model' && m.content === '');
+              if (idx !== -1) return [...prev.slice(0, idx), ...prev.slice(idx + 1)];
+              return prev;
+            });
+          }
         }
       }
 
@@ -198,12 +278,7 @@ export function Playground({ module }: PlaygroundProps) {
         }
       }
 
-      if (usedOpenRouter && finalModelResponse) {
-        setMessages(prev => [...prev, {
-          role: 'model',
-          content: finalModelResponse,
-          timestamp: Date.now(),
-        }]);
+      if (usedOpenRouter) {
         setIsSpeaking(true);
         setTimeout(() => setIsSpeaking(false), 3000);
       } else if (usedFallback || (!finalModelResponse && !isImgModel)) {
@@ -334,7 +409,9 @@ export function Playground({ module }: PlaygroundProps) {
           </div>
         )}
 
-        {messages.map((msg, idx) => (
+        {messages.map((msg, idx) => {
+          const isLastModelStreaming = isStreaming && msg.role === 'model' && idx === messages.length - 1;
+          return (
           <div 
             key={idx} 
             className={cn(
@@ -346,6 +423,11 @@ export function Playground({ module }: PlaygroundProps) {
               <span className="text-[8px] font-mono text-[#444] uppercase tracking-widest">
                 {msg.role === 'user' ? 'Input' : 'Response'}
               </span>
+              {msg.role === 'model' && msg.content && usageInfo && !isStreaming && idx === messages.length - 1 && (
+                <span className="text-[8px] font-mono text-[#555]" title={`Prompt: ${usageInfo.prompt_tokens ?? '?'} · Completion: ${usageInfo.completion_tokens ?? '?'}${usageInfo.cost ? ` · Cost: $${usageInfo.cost.toFixed(6)}` : ''}`}>
+                  ⚡ {usageInfo.total_tokens ?? '?'} tokens{usageInfo.cost ? ` · $${usageInfo.cost.toFixed(6)}` : ''}
+                </span>
+              )}
             </div>
             <div className={cn(
               "p-3 border transition-all duration-300 w-fit max-w-[90%]",
@@ -356,11 +438,12 @@ export function Playground({ module }: PlaygroundProps) {
               {msg.role === 'user' ? (
                 <p className="text-xs font-sans whitespace-pre-wrap">{msg.content}</p>
               ) : (
-                <ResponseView content={msg.content} />
+                <ResponseView content={msg.content} isStreaming={isLastModelStreaming} />
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
         {isLoading && (
           <div className="flex flex-col gap-2 items-start animate-pulse">
              <span className="text-[8px] font-mono text-[#444] uppercase tracking-widest px-1">Processing...</span>
