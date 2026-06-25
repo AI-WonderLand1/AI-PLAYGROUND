@@ -28,10 +28,12 @@ export function ApiKeysModal({ isOpen, onClose }: ApiKeysModalProps) {
   const [masterKey, setMasterKey] = useState('');
   const [keyCopied, setKeyCopied] = useState(false);
 
+  const [openrouterKey, setOpenrouterKey] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
   const [anthropicKey, setAnthropicKey] = useState('');
   const [groqKey, setGroqKey] = useState('');
 
+  const [showOpenrouter, setShowOpenrouter] = useState(false);
   const [showOpenai, setShowOpenai] = useState(false);
   const [showAnthropic, setShowAnthropic] = useState(false);
   const [showGroq, setShowGroq] = useState(false);
@@ -41,6 +43,7 @@ export function ApiKeysModal({ isOpen, onClose }: ApiKeysModalProps) {
   useEffect(() => {
     if (isOpen) {
       setMasterKey(getOrCreateMasterKey());
+      setOpenrouterKey(localStorage.getItem('mc_key_openrouter') || '');
       setOpenaiKey(localStorage.getItem('mc_key_openai') || '');
       setAnthropicKey(localStorage.getItem('mc_key_anthropic') || '');
       setGroqKey(localStorage.getItem('mc_key_groq') || '');
@@ -49,7 +52,7 @@ export function ApiKeysModal({ isOpen, onClose }: ApiKeysModalProps) {
 
   if (!isOpen) return null;
 
-  const handleSave = (provider: 'openai' | 'anthropic' | 'groq', value: string) => {
+  const handleSave = (provider: 'openrouter' | 'openai' | 'anthropic' | 'groq', value: string) => {
     localStorage.setItem(`mc_key_${provider}`, value.trim());
     setSavedStatus(prev => ({ ...prev, [provider]: true }));
     setTimeout(() => {
@@ -57,8 +60,9 @@ export function ApiKeysModal({ isOpen, onClose }: ApiKeysModalProps) {
     }, 2000);
   };
 
-  const handleClear = (provider: 'openai' | 'anthropic' | 'groq') => {
+  const handleClear = (provider: 'openrouter' | 'openai' | 'anthropic' | 'groq') => {
     localStorage.removeItem(`mc_key_${provider}`);
+    if (provider === 'openrouter') setOpenrouterKey('');
     if (provider === 'openai') setOpenaiKey('');
     if (provider === 'anthropic') setAnthropicKey('');
     if (provider === 'groq') setGroqKey('');
@@ -124,6 +128,41 @@ export function ApiKeysModal({ isOpen, onClose }: ApiKeysModalProps) {
         </div>
 
         <div className="space-y-6">
+          {/* OpenRouter Key */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <label className="text-[9px] font-mono text-[#888] uppercase tracking-wider">OpenRouter API Key (Unified Gateway)</label>
+              {openrouterKey && (
+                <span className="text-[8px] font-mono text-[#00e5a0] uppercase tracking-widest">Active</span>
+              )}
+            </div>
+            <div className="relative">
+              <input
+                type={showOpenrouter ? 'text' : 'password'}
+                placeholder="sk-or-v1-..."
+                value={openrouterKey}
+                onChange={(e) => setOpenrouterKey(e.target.value)}
+                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] text-xs text-[#E4E3E0] p-2.5 pr-20 focus:outline-none focus:border-[#b8ff57] font-mono"
+              />
+              <div className="absolute right-2 top-2 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setShowOpenrouter(!showOpenrouter)}
+                  className="p-1 text-[#555] hover:text-[#888]"
+                >
+                  {showOpenrouter ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSave('openrouter', openrouterKey)}
+                  className="bg-[#2a2a2a] hover:bg-[#b8ff57] hover:text-[#0a0a0a] text-xs font-mono text-[#888] px-2 py-1 transition-all"
+                >
+                  {savedStatus['openrouter'] ? 'SAVED' : 'SAVE'}
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* OpenAI Key */}
           <div className="space-y-2">
             <div className="flex justify-between items-center">
@@ -233,7 +272,7 @@ export function ApiKeysModal({ isOpen, onClose }: ApiKeysModalProps) {
         <div className="mt-6 flex gap-3 p-3 border border-[#2a2a2a] bg-[#0d0d0d] rounded-sm items-start">
           <ShieldAlert className="w-4 h-4 text-[#ffc147] shrink-0 mt-0.5" />
           <p className="text-[9px] text-[#555] font-mono leading-relaxed uppercase">
-            Your Wonderland Master Key handles all model routing by default. Provider keys are only needed if you want to bypass the unified gateway for direct API access.
+            Your Wonderland Master Key identifies your session. The OpenRouter key enables real model routing across 400+ models. Provider keys (below) are only for direct API access without OpenRouter.
           </p>
         </div>
 

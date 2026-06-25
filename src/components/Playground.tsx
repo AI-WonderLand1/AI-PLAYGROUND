@@ -4,7 +4,7 @@ import { GoogleGenAI } from '@google/genai';
 import { PlaygroundConfig, Message, AIModule } from '../types';
 import { ResponseView } from './ResponseView';
 import { RobotScene } from './RobotScene';
-import { cn } from '../utils';
+import { cn, getOpenRouterModel } from '../utils';
 
 interface PlaygroundProps {
   module: AIModule;
@@ -53,8 +53,45 @@ export function Playground({ module }: PlaygroundProps) {
       const isImgModel = config.model.includes('image') || config.model.includes('happyhorse') || config.model.includes('banana') || config.model.includes('riverflow');
       let finalModelResponse = '';
       let usedFallback = false;
+      let usedOpenRouter = false;
 
-      if (!isImgModel && config.model.startsWith('gpt-')) {
+      // Try OpenRouter first (unified gateway for all models)
+      const openrouterKey = localStorage.getItem('mc_key_openrouter');
+      const openrouterModel = getOpenRouterModel(config.model);
+      if (openrouterKey && openrouterModel && !isImgModel) {
+        try {
+          const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${openrouterKey}`,
+            },
+            body: JSON.stringify({
+              model: openrouterModel,
+              messages: [
+                ...(config.systemInstruction ? [{ role: 'system', content: config.systemInstruction }] : []),
+                ...messages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
+                { role: 'user', content: prompt }
+              ],
+              temperature: config.temperature,
+              top_p: config.topP,
+              max_tokens: config.maxOutputTokens || 4096,
+            })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            finalModelResponse = data.choices[0]?.message?.content || 'Empty response received.';
+            usedOpenRouter = true;
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            console.warn(`OpenRouter API error (${res.status}): ${errData?.error?.message || 'Unknown'}, falling through.`);
+          }
+        } catch (err: any) {
+          console.warn("OpenRouter request failed, falling through to direct providers.", err);
+        }
+      }
+
+      if (!usedOpenRouter && !isImgModel && config.model.startsWith('gpt-')) {
         const openaiKey = localStorage.getItem('mc_key_openai');
         if (openaiKey) {
           try {
@@ -88,7 +125,7 @@ export function Playground({ module }: PlaygroundProps) {
         } else {
           usedFallback = true;
         }
-      } else if (!isImgModel && config.model.startsWith('claude-')) {
+      } else if (!usedOpenRouter && !isImgModel && config.model.startsWith('claude-')) {
         const anthropicKey = localStorage.getItem('mc_key_anthropic');
         if (anthropicKey) {
           try {
@@ -125,7 +162,7 @@ export function Playground({ module }: PlaygroundProps) {
         } else {
           usedFallback = true;
         }
-      } else if (!isImgModel && config.model.startsWith('llama-')) {
+      } else if (!usedOpenRouter && !isImgModel && config.model.startsWith('llama-')) {
         const groqKey = localStorage.getItem('mc_key_groq');
         if (groqKey) {
           try {
@@ -161,7 +198,15 @@ export function Playground({ module }: PlaygroundProps) {
         }
       }
 
-      if (usedFallback || (!finalModelResponse && !isImgModel)) {
+      if (usedOpenRouter && finalModelResponse) {
+        setMessages(prev => [...prev, {
+          role: 'model',
+          content: finalModelResponse,
+          timestamp: Date.now(),
+        }]);
+        setIsSpeaking(true);
+        setTimeout(() => setIsSpeaking(false), 3000);
+      } else if (usedFallback || (!finalModelResponse && !isImgModel)) {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
         
         if (isImgModel) {
