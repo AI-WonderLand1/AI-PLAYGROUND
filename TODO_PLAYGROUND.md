@@ -25,26 +25,20 @@
 - Keep Gemini as final fallback if OpenRouter key is missing or fails
 - **Effort:** Medium (~3hr)
 
-### [ ] Add streaming responses (SSE)
-- **Files:** `Playground.tsx`
-- Switch from `fetch` to streaming via OpenRouter's SSE support:
-  ```ts
-  stream: true,
-  extra_body: { provider: { order: ['Sakana', 'Google'] } }
-  ```
-- Use `ReadableStream` to read chunks, update message content incrementally
-- Add a blinking cursor/indicator while streaming
-- Add a stop button to abort in-progress generation
-- **Effort:** Medium (~2hr)
+### [x] Add streaming responses (SSE)
+- **Files:** `Playground.tsx`, `server/index.ts`, `server/providers/registry.ts`
+- [/api/chat/stream SSE endpoint on server](server/index.ts)
+- ReadableStream parsing in `Playground.tsx`
+- Stop button during streaming
+- Blinking cursor via existing `isStreaming` state → `ResponseView` cursor
+- **Effort:** Done (~2hr)
 
-### [ ] Token & cost display per message
-- **Files:** `Playground.tsx`, `types.ts`
-- Parse `usage` from OpenRouter response (prompt_tokens, completion_tokens)
-- Calculate cost using model pricing from `CATALOG_MODELS`
-- Show a small footer under each model response:
-  `↑ 142 · ↓ 58 · $0.0008`
-- Add session running total in the sidebar
-- **Effort:** Small (~1hr)
+### [x] Token & cost display per message
+- **Files:** `Playground.tsx`
+- Parse `usage` from OpenRouter SSE response and non-streaming fallback
+- Footer format: `↑ {prompt} · ↓ {completion} · {total}t${cost ? ` · ${cost}` : ''}`
+- **Effort:** Done (~1hr)
+- **Remaining:** Session running total in sidebar
 
 ---
 
@@ -58,13 +52,12 @@
 - Show which model actually served the response in the message footer
 - **Effort:** Medium (~2hr)
 
-### [ ] Rate-limit & retry logic
+### [x] Rate-limit & retry logic
 - **Files:** `Playground.tsx`
-- Detect 429 (rate-limit) and 503 (overloaded) status codes
-- Implement exponential backoff: 1s → 2s → 4s → 8s → max 3 retries
-- Show warning badge when retrying
-- Surface rate-limit headers from OpenRouter response
-- **Effort:** Small (~1hr)
+- `fetchWithRetry` with exponential backoff (1s → 2s → 4s → 8s, max 3 retries)
+- Detects 429 and 503 status codes
+- **Effort:** Done (~1hr)
+- **Remaining:** Warning badge when retrying, surface rate-limit headers
 
 ### [ ] Request log / history drawer
 - **Files:** `new src/components/RequestLog.tsx`, `App.tsx`, `types.ts`

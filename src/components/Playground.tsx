@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Terminal, Copy, Check, Code, MessageSquare } from 'lucide-react';
+import { Send, Square, Terminal, Copy, Check, Code, MessageSquare } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { Message, AIModule } from '../types';
 import { ResponseView } from './ResponseView';
 import { RobotScene } from './RobotScene';
 import { cn } from '../utils';
 import { isCustomModel, getCustomProviderForModel, callCustomProvider } from '../lib/providers/registry';
+import { logUsage } from '../lib/usageTracker';
 
 interface PlaygroundProps {
   module: AIModule;
@@ -21,6 +22,7 @@ export function Playground({ module }: PlaygroundProps) {
   const [isStreaming, setIsStreaming] = useState(false);
   const contentRef = useRef('');
   const lastUpdateRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const config = module.config;
@@ -30,6 +32,26 @@ export function Playground({ module }: PlaygroundProps) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 3): Promise<Response> => {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const res = await fetch(url, options);
+      if (res.ok) return res;
+      if (res.status !== 429 && res.status !== 503) return res;
+      if (attempt === maxRetries) return res;
+      const delay = Math.pow(2, attempt) * 1000;
+      console.warn(`Rate-limited (${res.status}), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+    return new Response(null, { status: 503 });
+  };
+
+  const stopStreaming = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  };
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
@@ -57,6 +79,7 @@ export function Playground({ module }: PlaygroundProps) {
 
       const isImgModel = config.model.includes('image') || config.model.includes('happyhorse') || config.model.includes('banana') || config.model.includes('riverflow');
       let finalModelResponse = '';
+      let streamMsgAdded = false;
 
       const customProvider = isCustomModel(config.model) ? getCustomProviderForModel(config.model) : undefined;
 
@@ -82,8 +105,13 @@ export function Playground({ module }: PlaygroundProps) {
         }
       } else if (!isImgModel) {
         const wonderlandKey = localStorage.getItem('wonderland_master_key');
+        let accumulated = '';
+
         try {
-          const res = await fetch('/api/chat', {
+          abortControllerRef.current = new AbortController();
+          setIsStreaming(true);
+
+          const res = await fetch('/api/chat/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -100,20 +128,122 @@ export function Playground({ module }: PlaygroundProps) {
               },
               wonderlandKey,
             }),
+            signal: abortControllerRef.current.signal,
           });
 
-          if (res.ok) {
-            const data = await res.json();
-            finalModelResponse = data.content;
-            if (data.tokens || data.cost) {
-              setUsageInfo({ total_tokens: data.tokens, cost: data.cost });
-            }
-          } else {
+          if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
-            console.warn(`Proxy API error (${res.status}): ${errData?.error || 'Unknown'}, falling through to Gemini.`);
+            throw new Error(errData?.error || `HTTP ${res.status}`);
           }
+
+          const reader = res.body!.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          setMessages(prev => [...prev, { role: 'model', content: '', timestamp: Date.now() }]);
+          streamMsgAdded = true;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              const data = line.slice(6).trim();
+              if (data === '[DONE]') continue;
+
+              try {
+                const parsed = JSON.parse(data);
+                const delta = parsed.choices?.[0]?.delta?.content || '';
+                accumulated += delta;
+
+                if (parsed.usage) {
+                  setUsageInfo({
+                    prompt_tokens: parsed.usage.prompt_tokens,
+                    completion_tokens: parsed.usage.completion_tokens,
+                    total_tokens: parsed.usage.total_tokens,
+                  });
+                  logUsage({
+                    model: config.model,
+                    promptTokens: parsed.usage.prompt_tokens || 0,
+                    completionTokens: parsed.usage.completion_tokens || 0,
+                    totalTokens: parsed.usage.total_tokens || 0,
+                    status: 'success',
+                  });
+                }
+
+                setMessages(prev => {
+                  const updated = [...prev];
+                  const last = updated[updated.length - 1];
+                  if (last && last.role === 'model') {
+                    updated[updated.length - 1] = { ...last, content: accumulated };
+                  }
+                  return updated;
+                });
+              } catch {}
+            }
+          }
+
+          finalModelResponse = accumulated;
+          setIsSpeaking(true);
+          setTimeout(() => setIsSpeaking(false), 3000);
         } catch (err: any) {
-          console.warn("Proxy call failed, falling through to Gemini.", err);
+          if (err.name === 'AbortError') {
+            finalModelResponse = accumulated || ' ';
+          } else {
+            console.warn("Streaming failed, falling back to non-streaming.", err);
+          }
+        } finally {
+          setIsStreaming(false);
+          abortControllerRef.current = null;
+        }
+
+        if (!finalModelResponse) {
+          try {
+            const res = await fetchWithRetry('/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: config.model,
+                messages: [
+                  ...(config.systemInstruction ? [{ role: 'system', content: config.systemInstruction }] : []),
+                  ...messages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
+                  { role: 'user', content: prompt }
+                ],
+                config: {
+                  temperature: config.temperature,
+                  topP: config.topP,
+                  maxTokens: config.maxOutputTokens,
+                },
+                wonderlandKey,
+              }),
+            });
+
+            if (res.ok) {
+              const data = await res.json();
+              finalModelResponse = data.content;
+              if (data.tokens || data.cost) {
+                setUsageInfo({ total_tokens: data.tokens, cost: data.cost });
+                logUsage({
+                  model: config.model,
+                  promptTokens: data.prompt_tokens || 0,
+                  completionTokens: data.completion_tokens || 0,
+                  totalTokens: data.tokens || 0,
+                  cost: data.cost,
+                  status: 'success',
+                });
+              }
+            } else {
+              const errData = await res.json().catch(() => ({}));
+              console.warn(`Proxy API error (${res.status}): ${errData?.error || 'Unknown'}, falling through to Gemini.`);
+            }
+          } catch (err: any) {
+            console.warn("Proxy call failed, falling through to Gemini.", err);
+          }
         }
       }
 
@@ -166,7 +296,7 @@ export function Playground({ module }: PlaygroundProps) {
           setIsSpeaking(true);
           setTimeout(() => setIsSpeaking(false), 3000);
         }
-      } else if (finalModelResponse) {
+      } else if (finalModelResponse && !streamMsgAdded) {
         setMessages(prev => [...prev, {
           role: 'model',
           content: finalModelResponse,
@@ -251,8 +381,8 @@ export function Playground({ module }: PlaygroundProps) {
                 {msg.role === 'user' ? 'Input' : 'Response'}
               </span>
               {msg.role === 'model' && msg.content && usageInfo && !isStreaming && idx === messages.length - 1 && (
-                <span className="text-[8px] font-mono text-[#555]" title={`Prompt: ${usageInfo.prompt_tokens ?? '?'} · Completion: ${usageInfo.completion_tokens ?? '?'}${usageInfo.cost ? ` · Cost: $${usageInfo.cost.toFixed(6)}` : ''}`}>
-                  ⚡ {usageInfo.total_tokens ?? '?'} tokens{usageInfo.cost ? ` · $${usageInfo.cost.toFixed(6)}` : ''}
+                <span className="text-[8px] font-mono text-[#555]">
+                  ↑ {usageInfo.prompt_tokens ?? '?'} · ↓ {usageInfo.completion_tokens ?? '?'} · {usageInfo.total_tokens ?? '?'}t{usageInfo.cost ? ` · $${usageInfo.cost.toFixed(6)}` : ''}
                 </span>
               )}
             </div>
@@ -294,13 +424,22 @@ export function Playground({ module }: PlaygroundProps) {
             placeholder="Enter prompt..."
             className="w-full bg-[#141414] border border-[#2a2a2a] p-3 pr-12 text-xs text-[#E4E3E0] font-sans focus:outline-none focus:border-[#E4E3E0] transition-all min-h-[60px] max-h-[150px] resize-none"
           />
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || isLoading}
-            className="absolute right-3 bottom-3 p-1.5 bg-[#E4E3E0] text-[#141414] hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-          >
-            <Send className="w-3.5 h-3.5" />
-          </button>
+          {isStreaming ? (
+            <button
+              onClick={stopStreaming}
+              className="absolute right-3 bottom-3 p-1.5 bg-red-500 text-white hover:bg-red-400 transition-all"
+            >
+              <Square className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={!input.trim() || isLoading}
+              className="absolute right-3 bottom-3 p-1.5 bg-[#E4E3E0] text-[#141414] hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              <Send className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
     </div>

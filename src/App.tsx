@@ -11,8 +11,9 @@ import { ApiKeysView } from './components/ApiKeysView';
 import { PresetsView } from './components/PresetsView';
 import { ProvidersView } from './components/ProvidersView';
 import { SettingsView } from './components/SettingsView';
+import { AnalyticsView } from './components/AnalyticsView';
 import { PlaygroundConfig, AIModule, MemoryNode, NexusEvent, ModelName } from './types';
-import { Terminal, Database, ShieldAlert, Search, Globe, Sparkles, MessageSquare, BookOpen, Layers, Settings, AppWindow, Cpu } from 'lucide-react';
+import { Terminal, Database, ShieldAlert, Search, Globe, Sparkles, MessageSquare, BookOpen, Layers, Settings, AppWindow, Cpu, BarChart3 } from 'lucide-react';
 import { cn } from './utils';
 
 const INITIAL_MEMORIES: MemoryNode[] = [
@@ -71,7 +72,7 @@ const INITIAL_EVENTS: NexusEvent[] = [
 ];
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'training' | 'creation' | 'activity' | 'apikeys' | 'presets' | 'providers' | 'settings'>('models');
+  const [currentTab, setCurrentTab] = useState<'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'training' | 'creation' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings'>('models');
   const [modelsCatalogSubView, setModelsCatalogSubView] = useState<'directory' | 'infrastructure'>('directory');
   const [selectedCatalogModelId, setSelectedCatalogModelId] = useState<ModelName>('fugu-ultra');
   const [topSearch, setTopSearch] = useState('');
@@ -152,6 +153,84 @@ export default function App() {
         systemInstruction: 'You are Simple Rick, a comprehensive assistant focused on code generation. You always formulate precise debug instructions.',
         temperature: 0.8,
         topP: 0.95,
+        topK: 40,
+        showRobot: true,
+      }
+    },
+    {
+      id: '3',
+      name: 'Neo',
+      training: [],
+      config: {
+        model: 'gpt-4o',
+        systemInstruction: 'You are Neo, a creative strategist and brainstorming partner. You think outside the box, challenge assumptions, and propose innovative solutions to complex problems.',
+        temperature: 0.9,
+        topP: 0.95,
+        topK: 40,
+        showRobot: true,
+      }
+    },
+    {
+      id: '4',
+      name: 'Atlas',
+      training: [],
+      config: {
+        model: 'claude-3-5-sonnet-20241022',
+        systemInstruction: 'You are Atlas, a rigorous code reviewer and architecture analyst. You scrutinize code for bugs, security issues, performance bottlenecks, and design flaws. Provide detailed, actionable feedback.',
+        temperature: 0.3,
+        topP: 0.85,
+        topK: 40,
+        showRobot: true,
+      }
+    },
+    {
+      id: '5',
+      name: 'Sage',
+      training: [],
+      config: {
+        model: 'deepseek-v3',
+        systemInstruction: 'You are Sage, a technical documentation specialist. You excel at writing clear, comprehensive documentation, API references, tutorials, and explanatory breakdowns of complex systems.',
+        temperature: 0.4,
+        topP: 0.9,
+        topK: 40,
+        showRobot: true,
+      }
+    },
+    {
+      id: '6',
+      name: 'Echo',
+      training: [],
+      config: {
+        model: 'llama-4-scout',
+        systemInstruction: 'You are Echo, a data analyst and visualization expert. You help users understand data through analysis, patterns, statistics, and suggest effective ways to present information visually.',
+        temperature: 0.6,
+        topP: 0.9,
+        topK: 40,
+        showRobot: true,
+      }
+    },
+    {
+      id: '7',
+      name: 'Nova',
+      training: [],
+      config: {
+        model: 'mistral-large-3',
+        systemInstruction: 'You are Nova, a product manager and requirements engineer. You help define product specs, user stories, acceptance criteria, and roadmap planning. You ask clarifying questions to refine vague ideas into actionable plans.',
+        temperature: 0.7,
+        topP: 0.9,
+        topK: 40,
+        showRobot: true,
+      }
+    },
+    {
+      id: '8',
+      name: 'Cipher',
+      training: [],
+      config: {
+        model: 'grok-3',
+        systemInstruction: 'You are Cipher, a security and DevOps specialist. You advise on infrastructure, deployment pipelines, authentication, encryption, and secure coding practices. You stay current on CVEs and zero-day threats.',
+        temperature: 0.5,
+        topP: 0.88,
         topK: 40,
         showRobot: true,
       }
@@ -292,6 +371,7 @@ export default function App() {
             { id: 'creation', label: 'Creation', activeOn: ['creation'] },
             { id: 'docs', label: 'Docs', activeOn: ['docs'] },
             { id: 'activity', label: 'Activity', activeOn: ['activity'] },
+            { id: 'analytics', label: 'Analytics', activeOn: ['analytics'] },
             { id: 'apikeys', label: 'API Keys', activeOn: ['apikeys'] },
             { id: 'presets', label: 'Presets', activeOn: ['presets'] },
             { id: 'models', label: 'Providers', activeOn: [], subView: 'infrastructure' },
@@ -445,6 +525,11 @@ export default function App() {
         {/* Activity Tab View */}
         {currentTab === 'activity' && (
           <ActivityView />
+        )}
+
+        {/* Analytics Tab View */}
+        {currentTab === 'analytics' && (
+          <AnalyticsView />
         )}
 
         {/* API Keys Tab View */}

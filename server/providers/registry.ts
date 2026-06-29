@@ -304,6 +304,90 @@ function getApiKey(envKey: string): string | undefined {
   return process.env[envKey];
 }
 
+export async function callProviderStreaming(
+  provider: ProviderConfig,
+  messages: ChatMessage[],
+  config: ChatConfig & { model: string },
+): Promise<Response> {
+  const apiKey = getApiKey(provider.envKey);
+  if (!apiKey) {
+    throw new Error(`No API key configured for ${provider.name}. Set ${provider.envKey} env var.`);
+  }
+
+  const body = provider.buildRequest(messages, config) as Record<string, unknown>;
+  body.stream = true;
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (provider.authStyle === 'bearer') {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  } else if (provider.authStyle === 'x-api-key') {
+    headers['x-api-key'] = apiKey;
+  }
+
+  if (provider.id === 'anthropic') {
+    headers['anthropic-version'] = '2023-06-01';
+    headers['anthropic-dangerous-direct-browser-access'] = 'true';
+  }
+
+  const res = await fetch(provider.baseUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData?.error?.message || `${provider.name} HTTP ${res.status}`);
+  }
+
+  return res;
+}
+
+export async function callModelStreaming(
+  modelId: string,
+  messages: ChatMessage[],
+  config: ChatConfig,
+): Promise<Response> {
+  const fullConfig = { ...config, model: modelId };
+
+  const openrouterKey = getApiKey('OPENROUTER_API_KEY');
+  const openrouterModel = MODEL_ROUTES[modelId];
+
+  if (openrouterKey && openrouterModel) {
+    try {
+      const openrouterProvider = PROVIDERS.find(p => p.id === 'openrouter')!;
+      const orBody = {
+        ...openrouterProvider.buildRequest(messages, { ...config, model: modelId }),
+        model: openrouterModel,
+        stream: true,
+      };
+
+      const res = await fetch(openrouterProvider.baseUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openrouterKey}`,
+        },
+        body: JSON.stringify(orBody),
+      });
+
+      if (res.ok) return res;
+    } catch {
+      // fall through to direct provider
+    }
+  }
+
+  const directProvider = getProviderForModel(modelId);
+  if (directProvider && directProvider.id !== 'openrouter') {
+    return callProviderStreaming(directProvider, messages, fullConfig);
+  }
+
+  throw new Error(`No provider available for streaming model "${modelId}".`);
+}
+
 export async function callProvider(
   provider: ProviderConfig,
   messages: ChatMessage[],

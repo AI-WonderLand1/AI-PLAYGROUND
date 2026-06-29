@@ -1,12 +1,17 @@
 import express from 'express';
 import cors from 'cors';
 import { validateWonderlandKey } from './wonderland-keys';
-import { callModel } from './providers/registry';
+import { callModel, callModelStreaming } from './providers/registry';
+import stripeWebhook from './stripe-webhook';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
 
 app.use(cors());
+
+// Stripe webhook needs raw body for signature verification
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
+
 app.use(express.json());
 
 app.post('/api/chat', async (req, res) => {
@@ -33,6 +38,51 @@ app.post('/api/chat', async (req, res) => {
   } catch (err: any) {
     console.error(`/api/chat error for model ${model}:`, err.message);
     res.status(502).json({ error: err.message || 'Upstream provider error.' });
+  }
+});
+
+app.post('/api/chat/stream', async (req, res) => {
+  const { model, messages, config, wonderlandKey } = req.body;
+
+  if (!model || !messages) {
+    res.status(400).json({ error: 'Missing required fields: model, messages' });
+    return;
+  }
+
+  if (!wonderlandKey) {
+    res.status(401).json({ error: 'Missing Wonderland key.' });
+    return;
+  }
+
+  if (!validateWonderlandKey(wonderlandKey)) {
+    res.status(403).json({ error: 'Invalid Wonderland key.' });
+    return;
+  }
+
+  try {
+    const providerResponse = await callModelStreaming(model, messages, config || {});
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    const reader = providerResponse.body!.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(decoder.decode(value));
+    }
+    res.end();
+  } catch (err: any) {
+    console.error(`/api/chat/stream error for model ${model}:`, err.message);
+    if (!res.headersSent) {
+      res.status(502).json({ error: err.message || 'Upstream provider error.' });
+    } else {
+      res.end();
+    }
   }
 });
 
