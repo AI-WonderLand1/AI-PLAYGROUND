@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Terminal, Image as ImageIcon, Copy, Check, Code, MessageSquare } from 'lucide-react';
+import { Send, Terminal, Copy, Check, Code, MessageSquare } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
-import { PlaygroundConfig, Message, AIModule } from '../types';
+import { Message, AIModule } from '../types';
 import { ResponseView } from './ResponseView';
 import { RobotScene } from './RobotScene';
-import { cn, getOpenRouterModel } from '../utils';
+import { cn } from '../utils';
+import { isCustomModel, getCustomProviderForModel, callCustomProvider } from '../lib/providers/registry';
 
 interface PlaygroundProps {
   module: AIModule;
@@ -56,224 +57,67 @@ export function Playground({ module }: PlaygroundProps) {
 
       const isImgModel = config.model.includes('image') || config.model.includes('happyhorse') || config.model.includes('banana') || config.model.includes('riverflow');
       let finalModelResponse = '';
-      let usedOpenRouter = false;
 
-      // Try OpenRouter first (unified gateway for all models) with streaming
-      const openrouterKey = localStorage.getItem('mc_key_openrouter');
-      const openrouterModel = getOpenRouterModel(config.model);
-      if (openrouterKey && openrouterModel && !isImgModel) {
-        const msgTimestamp = Date.now();
+      const customProvider = isCustomModel(config.model) ? getCustomProviderForModel(config.model) : undefined;
+
+      if (customProvider) {
         try {
-          setIsStreaming(true);
-
-          const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          const result = await callCustomProvider(
+            customProvider,
+            [
+              ...(config.systemInstruction ? [{ role: 'system' as const, content: config.systemInstruction }] : []),
+              ...messages.map(m => ({ role: m.role === 'user' ? 'user' as const : 'assistant' as const, content: m.content })),
+              { role: 'user' as const, content: prompt }
+            ],
+            {
+              systemInstruction: config.systemInstruction,
+              temperature: config.temperature,
+              topP: config.topP,
+              maxTokens: config.maxOutputTokens,
+            }
+          );
+          finalModelResponse = result.content;
+        } catch (err: any) {
+          console.warn("Custom provider call failed.", err);
+        }
+      } else if (!isImgModel) {
+        const wonderlandKey = localStorage.getItem('wonderland_master_key');
+        try {
+          const res = await fetch('/api/chat', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${openrouterKey}`,
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              model: openrouterModel,
+              model: config.model,
               messages: [
                 ...(config.systemInstruction ? [{ role: 'system', content: config.systemInstruction }] : []),
                 ...messages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
                 { role: 'user', content: prompt }
               ],
-              temperature: config.temperature,
-              top_p: config.topP,
-              max_tokens: config.maxOutputTokens || 4096,
-              stream: true,
-            })
+              config: {
+                temperature: config.temperature,
+                topP: config.topP,
+                maxTokens: config.maxOutputTokens,
+              },
+              wonderlandKey,
+            }),
           });
 
-          if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            console.warn(`OpenRouter API error (${res.status}): ${errData?.error?.message || 'Unknown'}, falling through.`);
+          if (res.ok) {
+            const data = await res.json();
+            finalModelResponse = data.content;
+            if (data.tokens || data.cost) {
+              setUsageInfo({ total_tokens: data.tokens, cost: data.cost });
+            }
           } else {
-            const reader = res.body?.getReader();
-            if (!reader) throw new Error('No response body');
-
-            const decoder = new TextDecoder();
-            let buffer = '';
-            contentRef.current = '';
-            lastUpdateRef.current = 0;
-            let messageCreated = false;
-
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split('\n');
-              buffer = lines.pop() || '';
-
-              for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                  const data = line.slice(6).trim();
-                  if (data === '[DONE]') continue;
-                  try {
-                    const parsed = JSON.parse(data);
-                    const delta = parsed.choices?.[0]?.delta?.content;
-                    if (delta) {
-                      contentRef.current += delta;
-                      if (!messageCreated) {
-                        messageCreated = true;
-                        setMessages(prev => [...prev, {
-                          role: 'model',
-                          content: contentRef.current,
-                          timestamp: msgTimestamp,
-                        }]);
-                      } else {
-                        const now = Date.now();
-                        if (now - lastUpdateRef.current > 50) {
-                          lastUpdateRef.current = now;
-                          setMessages(prev => {
-                            const updated = [...prev];
-                            const last = { ...updated[updated.length - 1] };
-                            last.content = contentRef.current;
-                            updated[updated.length - 1] = last;
-                            return updated;
-                          });
-                        }
-                      }
-                    }
-                    if (parsed.usage) {
-                      setUsageInfo(parsed.usage);
-                    }
-                  } catch {
-                    // Skip malformed SSE lines
-                  }
-                }
-              }
-            }
-
-            if (messageCreated) {
-              setMessages(prev => {
-                const updated = [...prev];
-                const last = { ...updated[updated.length - 1] };
-                last.content = contentRef.current;
-                updated[updated.length - 1] = last;
-                return updated;
-              });
-            } else {
-              setMessages(prev => [...prev, {
-                role: 'model',
-                content: 'Empty response received.',
-                timestamp: msgTimestamp,
-              }]);
-            }
-
-            usedOpenRouter = true;
+            const errData = await res.json().catch(() => ({}));
+            console.warn(`Proxy API error (${res.status}): ${errData?.error || 'Unknown'}, falling through to Gemini.`);
           }
         } catch (err: any) {
-          console.warn("OpenRouter request failed, falling through to direct providers.", err);
-        } finally {
-          setIsStreaming(false);
+          console.warn("Proxy call failed, falling through to Gemini.", err);
         }
       }
 
-      if (!usedOpenRouter && !isImgModel && config.model.startsWith('gpt-')) {
-        const openaiKey = localStorage.getItem('mc_key_openai');
-        if (openaiKey) {
-          try {
-            const res = await fetch('https://api.openai.com/v1/chat/completions', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${openaiKey}`
-              },
-              body: JSON.stringify({
-                model: config.model,
-                messages: [
-                  ...(config.systemInstruction ? [{ role: 'system', content: config.systemInstruction }] : []),
-                  ...messages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
-                  { role: 'user', content: prompt }
-                ],
-                temperature: config.temperature,
-                top_p: config.topP,
-              })
-            });
-            if (!res.ok) {
-              const errData = await res.json().catch(() => ({}));
-              throw new Error(errData?.error?.message || `HTTP ${res.status}`);
-            }
-            const data = await res.json();
-            finalModelResponse = data.choices[0]?.message?.content || 'Empty response received.';
-          } catch (err: any) {
-            console.warn("OpenAI API call failed.", err);
-          }
-        }
-      } else if (!usedOpenRouter && !isImgModel && config.model.startsWith('claude-')) {
-        const anthropicKey = localStorage.getItem('mc_key_anthropic');
-        if (anthropicKey) {
-          try {
-            const res = await fetch('https://api.anthropic.com/v1/messages', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': anthropicKey,
-                'anthropic-version': '2023-06-01',
-                'anthropic-dangerous-direct-browser-access': 'true'
-              },
-              body: JSON.stringify({
-                model: config.model,
-                system: config.systemInstruction || undefined,
-                messages: [
-                  ...messages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
-                  { role: 'user', content: prompt }
-                ],
-                max_tokens: config.maxOutputTokens || 1024,
-                temperature: config.temperature,
-                top_p: config.topP,
-              })
-            });
-            if (!res.ok) {
-              const errData = await res.json().catch(() => ({}));
-              throw new Error(errData?.error?.message || `HTTP ${res.status}`);
-            }
-            const data = await res.json();
-            finalModelResponse = data.content?.[0]?.text || 'Empty response received.';
-          } catch (err: any) {
-            console.warn("Anthropic API call failed.", err);
-          }
-        }
-      } else if (!usedOpenRouter && !isImgModel && config.model.startsWith('llama-')) {
-        const groqKey = localStorage.getItem('mc_key_groq');
-        if (groqKey) {
-          try {
-            const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${groqKey}`
-              },
-              body: JSON.stringify({
-                model: config.model,
-                messages: [
-                  ...(config.systemInstruction ? [{ role: 'system', content: config.systemInstruction }] : []),
-                  ...messages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
-                  { role: 'user', content: prompt }
-                ],
-                temperature: config.temperature,
-                top_p: config.topP,
-              })
-            });
-            if (!res.ok) {
-              const errData = await res.json().catch(() => ({}));
-              throw new Error(errData?.error?.message || `HTTP ${res.status}`);
-            }
-            const data = await res.json();
-            finalModelResponse = data.choices[0]?.message?.content || 'Empty response received.';
-          } catch (err: any) {
-            console.warn("Groq API call failed.", err);
-          }
-        }
-      }
-
-      if (usedOpenRouter) {
-        setIsSpeaking(true);
-        setTimeout(() => setIsSpeaking(false), 3000);
-      } else if (!finalModelResponse && !isImgModel) {
+      if (!finalModelResponse && !isImgModel) {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
         
         if (isImgModel) {
