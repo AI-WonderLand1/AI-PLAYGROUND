@@ -248,7 +248,7 @@ export function Playground({ module }: PlaygroundProps) {
       }
 
       if (!finalModelResponse && !isImgModel) {
-        const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY! });
+        const ai = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY as any) });
         
         if (isImgModel) {
           const geminiModel = (config.model.startsWith('gemini-') && !config.model.includes('banana')) ? config.model : 'imagen-3.0-generate-002';
