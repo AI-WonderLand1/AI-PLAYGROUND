@@ -5,7 +5,7 @@ import {
   Zap, Cpu, Code, HelpCircle, Sparkles, Info, AlertTriangle, 
   Terminal, Layers, FileText, Check, Settings, Globe, Mail, 
   GitBranch, Filter, Split, MessageSquare, BookOpen, Download, 
-  RefreshCw, ChevronDown, ChevronUp, Link, HelpCircle as HelpIcon,
+  RefreshCw, ChevronDown, ChevronUp, ChevronRight, Link, HelpCircle as HelpIcon,
   Copy, ExternalLink, Activity, ArrowRight, BarChart2, Briefcase, 
   Key, Sliders
 } from 'lucide-react';
@@ -73,7 +73,7 @@ interface AIWonderCanvasProps {
   onClearEvents: () => void;
   onDismissEvent: (id: string) => void;
    currentTab?: 'aiwonder' | 'workbench' | 'training' | 'creation';
-  onTabChange?: (tab: 'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'training' | 'creation') => void;
+  onTabChange?: (tab: 'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'workbench' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings') => void;
 }
 
 // Helper: convert schedule interval string to milliseconds
@@ -370,7 +370,7 @@ export function AIWonderCanvas({
 
   // Double click canvas to summon Node Add Panel at specific grid coordinate
   const handleCanvasDoubleClick = (e: React.MouseEvent) => {
-    if (currentTab !== 'aiwonder') return;
+    if (currentTab !== 'aiwonder' && currentTab !== 'workbench') return;
     const target = e.target as HTMLElement;
     if (target.closest('.node-box') || target.closest('button') || target.closest('input')) return;
 
@@ -387,7 +387,7 @@ export function AIWonderCanvas({
    // Handle starting connection
    const handleStartConnection = (nodeId: string, e: React.MouseEvent) => {
      e.stopPropagation();
-     if (currentTab === 'training' || (currentTab === 'workbench' && workbenchMode === 'training')) return;
+     if (currentTab === 'training' || (currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'training')) return;
      setConnectingPin({ nodeId, type: 'output' });
    };
 
@@ -419,14 +419,14 @@ export function AIWonderCanvas({
   };
 
   // Drag handles for node
-  const handleNodeDragStart = (node: WorkflowNode, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (currentTab === 'training') return;
-    if (e.button !== 0) return;
-    setDraggedNodeId(node.id);
-    setDragStart({ x: e.clientX, y: e.clientY });
-    setDragStartNodePos({ x: node.x, y: node.y });
-  };
+   const handleNodeDragStart = (node: WorkflowNode, e: React.MouseEvent) => {
+     e.stopPropagation();
+     if (currentTab === 'training' || (currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'training')) return;
+     if (e.button !== 0) return;
+     setDraggedNodeId(node.id);
+     setDragStart({ x: e.clientX, y: e.clientY });
+     setDragStartNodePos({ x: node.x, y: node.y });
+   };
 
   // Handle double clicking any node to show the full screen/overlay NDV
   const handleNodeDoubleClick = (node: WorkflowNode, e: React.MouseEvent) => {
@@ -615,7 +615,7 @@ export function AIWonderCanvas({
 
     if (onTabChange) {
       setTimeout(() => {
-        onTabChange('aiwonder');
+        setIsSubDrawerOpen(false);
       }, 1200);
     }
   };
@@ -1251,16 +1251,16 @@ Respond ONLY in JSON matching this format:
           {/* Left info */}
           <div className="flex items-center gap-3">
             <div className="bg-[#5b5eff]/10 p-1.5 border border-[#5b5eff]/20 rounded-sm">
-              {currentTab === 'training' ? (
+              {currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'training' ? (
                 <Terminal className="w-4 h-4 text-[#b8ff57]" />
-              ) : currentTab === 'creation' ? (
+              ) : currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'creation' ? (
                 <Sparkles className="w-4 h-4 text-[#b04cff]" />
               ) : (
                 <Layers className="w-4 h-4 text-[#5b5eff]" />
               )}
             </div>
             <div>
-              {currentTab === 'training' ? (
+              {currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'training' ? (
                 <>
                   <h2 className="text-xs font-bold tracking-wider uppercase text-[#b8ff57]">
                     Knowledge Training Sets
@@ -1269,7 +1269,7 @@ Respond ONLY in JSON matching this format:
                     Select nodes on the canvas below to include in your training set
                   </div>
                 </>
-              ) : currentTab === 'creation' ? (
+              ) : currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'creation' ? (
                 <>
                   <h2 className="text-xs font-bold tracking-wider uppercase text-[#b04cff]">
                     Nexus Agent Spark Genesis
@@ -1299,7 +1299,7 @@ Respond ONLY in JSON matching this format:
                   <span className="text-[8px] bg-slate-900 px-1 py-0.5 text-[#5e6686] uppercase border border-[#1f2235] rounded-sm select-none">Double-click to edit</span>
                 </div>
               )}
-              {currentTab === 'aiwonder' && (
+              {(currentTab === 'aiwonder' || currentTab === 'workbench') && (
                 <div className="text-[8px] text-[#4a5068] tracking-widest leading-none mt-1">
                   Node Graph Orchestrator // Last modified: Just now
                 </div>
@@ -1308,8 +1308,23 @@ Respond ONLY in JSON matching this format:
           </div>
 
           {/* Right aligned actions bar */}
-          <div className="flex items-center gap-3">
-            {currentTab === 'aiwonder' ? (
+           <div className="flex items-center gap-3">
+             {currentTab === 'workbench' && (
+               <button
+                 onClick={() => setIsSubDrawerOpen(!isSubDrawerOpen)}
+                 className={cn(
+                   "p-2 rounded-md transition-all border",
+                   isSubDrawerOpen 
+                     ? "bg-[#b8ff57]/10 border-[#b8ff57] text-[#b8ff57]" 
+                     : "bg-[#141624] border-[#1f2235] text-[#5e6686] hover:text-[#e8eaf6]"
+                 )}
+                 title="Toggle Workbench Sub-Drawer"
+               >
+                 {isSubDrawerOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+               </button>
+             )}
+             {currentTab === 'aiwonder' || currentTab === 'workbench' ? (
+
               <>
                 {/* Run button */}
                 <button
@@ -1381,17 +1396,11 @@ Respond ONLY in JSON matching this format:
                   <MoreHorizontal className="w-3.5 h-3.5" />
                 </button>
               </>
-            ) : currentTab === 'training' ? (
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-[#808eb5]">
-                  Selected: <strong className="text-[#b8ff57]">{nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).length} nodes</strong>
-                </span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-[#b04cff] font-bold">Genesis Ready</span>
-              </div>
-            )}
+             ) : (
+               <div className="flex items-center gap-2">
+                 <span className="text-[10px] text-[#4c5475] font-bold">Ready</span>
+               </div>
+             )}
           </div>
         </div>
 
@@ -1566,7 +1575,7 @@ Respond ONLY in JSON matching this format:
                       )}
                     >
                       {/* Input Pin */}
-                      {node.category !== 'trigger' && currentTab !== 'training' && (
+                      {node.category !== 'trigger' && !(currentTab === 'training' || (currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'training')) && (
                         <div
                           onClick={(e) => handleConnectTo(node.id, e)}
                           className="absolute left-[-6px] top-[32px] w-3 h-3 rounded-full border border-[#1f2235] bg-[#07080d] hover:bg-[#b8ff57] transition-all flex items-center justify-center cursor-pointer group"
@@ -1586,7 +1595,7 @@ Respond ONLY in JSON matching this format:
                         </div>
 
                         {/* Delete node option */}
-                        {currentTab !== 'training' && (
+                        {!(currentTab === 'training' || (currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'training')) && (
                           <button
                             onClick={(e) => handleDeleteNode(node.id, e)}
                             className="p-1 hover:bg-red-500/10 text-[#4c5475] hover:text-red-500 rounded transition-colors"
@@ -1637,7 +1646,7 @@ Respond ONLY in JSON matching this format:
                       )}
 
                       {/* Output Pin */}
-                      {currentTab !== 'training' && (
+                      {!(currentTab === 'training' || (currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'training')) && (
                         <div
                           onMouseDown={(e) => handleStartConnection(node.id, e)}
                           className="absolute right-[-6px] top-[32px] w-3 h-3 rounded-full border border-[#1f2235] bg-[#07080d] hover:bg-[#b8ff57] transition-all flex items-center justify-center cursor-pointer group"
@@ -1663,7 +1672,7 @@ Respond ONLY in JSON matching this format:
             </div>
 
             {/* Summon "+" FAB Button on canvas */}
-            {currentTab === 'aiwonder' && (
+            {(currentTab === 'aiwonder' || currentTab === 'workbench') && (
               <button
                 onClick={() => {
                   setSpawnCoords(null);
@@ -1677,215 +1686,248 @@ Respond ONLY in JSON matching this format:
             )}
           </div>
 
-          {/* Training Set Side Panel */}
-          {currentTab === 'training' && (
+          {/* WORKBENCH SUB-DRAWER (Unified Train + Create panels) */}
+          {((currentTab === 'workbench' && isSubDrawerOpen) || currentTab === 'training' || currentTab === 'creation') && (
             <div className="w-[360px] border-l border-[#1f2235]/60 bg-[#0a0c14]/95 flex flex-col font-mono z-20 shrink-0 h-full overflow-hidden">
-              <div className="p-4 border-b border-[#1f2235]/40 bg-[#0d0f19] flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-2">
-                  <Terminal className="w-4 h-4 text-[#b8ff57]" />
-                  <span className="text-xs font-bold tracking-wider text-[#e8eaf6] uppercase">Training Set Compiler</span>
-                </div>
-                <span className="text-[10px] bg-[#b8ff57]/15 text-[#b8ff57] px-2 py-0.5 rounded-full font-bold border border-[#b8ff57]/20">
-                  {nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).length} Active
-                </span>
-              </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
-                <div className="text-[10px] text-[#5e6686] uppercase tracking-wider mb-2 leading-relaxed">
-                  // Select memory nodes on the left canvas to package them into an offline-first cognitive dataset.
+              {/* Sub-drawer Tab Header (only in workbench mode) */}
+              {currentTab === 'workbench' && (
+                <div className="flex border-b border-[#1f2235]/40 bg-[#0d0f19] shrink-0">
+                  <button
+                    onClick={() => setWorkbenchMode('training')}
+                    className={cn(
+                      "flex-1 py-3 text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-1.5",
+                      workbenchMode === 'training' ? "text-[#b8ff57] border-b-2 border-[#b8ff57]" : "text-[#5e6686] hover:text-white"
+                    )}
+                  >
+                    <Terminal className="w-3.5 h-3.5" />
+                    Train
+                  </button>
+                  <button
+                    onClick={() => setWorkbenchMode('creation')}
+                    className={cn(
+                      "flex-1 py-3 text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-1.5",
+                      workbenchMode === 'creation' ? "text-[#b04cff] border-b-2 border-[#b04cff]" : "text-[#5e6686] hover:text-white"
+                    )}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Create
+                  </button>
                 </div>
+              )}
 
-                {/* Selected Items List */}
-                <div className="space-y-2">
-                  {nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).length === 0 ? (
-                    <div className="border border-[#1f2235]/30 bg-[#0d0e17]/50 rounded p-6 text-center text-[#4c5475] space-y-2">
-                      <Activity className="w-6 h-6 mx-auto opacity-30 text-[#808eb5]" />
-                      <div className="text-[10px] uppercase tracking-widest font-bold">No sources selected</div>
-                      <p className="text-[9px] leading-relaxed text-[#4c5475]">
-                        Use the "Use in training set" checkbox on any Memory node (Decision, Bug, Pattern, Context, etc.) on the canvas to include it here.
-                      </p>
+              {/* ===== TRAINING SET COMPILER CONTENT ===== */}
+              {((currentTab === 'workbench' && workbenchMode === 'training') || currentTab === 'training') && (
+                <>
+                  <div className="p-4 border-b border-[#1f2235]/40 bg-[#0d0f19] flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-2">
+                      <Terminal className="w-4 h-4 text-[#b8ff57]" />
+                      <span className="text-xs font-bold tracking-wider text-[#e8eaf6] uppercase">Training Set Compiler</span>
                     </div>
-                  ) : (
-                    nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).map(node => {
-                      const matchingMem = memories.find(m => m.id === node.memoryId);
-                      return (
-                        <div 
-                          key={node.id} 
-                          className="border border-[#1f2235]/50 bg-[#0d0e17] rounded p-2.5 flex items-start justify-between gap-3 group hover:border-[#b8ff57]/40 transition-colors"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[8px] bg-[#1a1c2e] border border-[#1f2235] text-[#b8ff57] px-1 py-0.2 rounded font-mono uppercase tracking-widest leading-none">
-                                {node.type.toUpperCase()}
-                              </span>
-                              <span className="text-[10px] text-slate-400 font-semibold truncate block leading-none">
-                                {node.config.title || node.label}
-                              </span>
-                            </div>
-                            <p className="text-[9px] text-[#4c5475] font-mono leading-relaxed mt-1 line-clamp-2">
-                              {matchingMem ? matchingMem.content : (node.config.description || 'No content parsed')}
-                            </p>
-                          </div>
-
-                          <button
-                            onClick={() => {
-                              setNodes(prev => prev.map(n => n.id === node.id ? {
-                                ...n,
-                                useInTrainingSet: false,
-                                config: { ...n.config, useInTrainingSet: false }
-                              } : n));
-                              showNotification('Removed from training set');
-                            }}
-                            className="p-1 hover:bg-red-500/10 text-[#4c5475] hover:text-red-500 rounded transition-colors shrink-0"
-                            title="Exclude from training set"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              {/* Actions Panel */}
-              <div className="p-4 border-t border-[#1f2235]/40 bg-[#0d0f19] shrink-0 space-y-2">
-                <button
-                  onClick={handleExportTrainingSet}
-                  disabled={nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).length === 0}
-                  className="w-full bg-[#b8ff57] hover:bg-[#a5e64e] disabled:bg-[#141624] disabled:text-[#4c5475] disabled:border-[#1f2235] border border-black/10 text-black py-2 rounded font-bold text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Export JSONL Dataset</span>
-                </button>
-                <div className="text-[8px] text-center text-[#4c5475] tracking-widest leading-none mt-1 uppercase">
-                  Generated as application/x-jsonlines
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Agent Spark Compiler / Creation Side Panel */}
-          {currentTab === 'creation' && (
-            <div className="w-[360px] border-l border-[#1f2235]/60 bg-[#0a0c14]/95 flex flex-col font-mono z-20 shrink-0 h-full overflow-hidden">
-              <div className="p-4 border-b border-[#1f2235]/40 bg-[#0d0f19] flex items-center gap-2 shrink-0">
-                <Sparkles className="w-4 h-4 text-[#b04cff]" />
-                <span className="text-xs font-bold tracking-wider text-[#e8eaf6] uppercase">Agent Compiler</span>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
-                <div className="text-[10px] text-[#5e6686] uppercase tracking-wider mb-2 leading-relaxed">
-                  // Compile and instantiate a new autonomous routing agent node directly onto the active workspace.
-                </div>
-
-                {/* Form Input fields */}
-                <div className="space-y-3.5">
-                  {/* Agent Name */}
-                  <div className="space-y-1">
-                    <label className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold">Agent Identifier Name</label>
-                    <input
-                      type="text"
-                      value={creationAgentName}
-                      onChange={(e) => setCreationAgentName(e.target.value)}
-                      className="w-full bg-[#0c0e17] border border-[#1f2235] rounded px-3 py-1.5 text-xs text-[#e8eaf6] focus:outline-none focus:border-[#b04cff] transition-colors"
-                      placeholder="e.g., Fugu Reasoner Node"
-                    />
+                    <span className="text-[10px] bg-[#b8ff57]/15 text-[#b8ff57] px-2 py-0.5 rounded-full font-bold border border-[#b8ff57]/20">
+                      {nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).length} Active
+                    </span>
                   </div>
 
-                  {/* Base Model Dropdown */}
-                  <div className="space-y-1">
-                    <label className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold">Base Model Engine</label>
-                    <select
-                      value={creationBaseModel}
-                      onChange={(e) => setCreationBaseModel(e.target.value as ModelName)}
-                      className="w-full bg-[#0c0e17] border border-[#1f2235] rounded px-2.5 py-1.5 text-xs text-[#e8eaf6] focus:outline-none focus:border-[#b04cff] transition-colors cursor-pointer"
-                    >
-                      {CATALOG_MODELS.filter(m => m.modality === 'Text').map(m => (
-                        <option key={m.id} value={m.id}>
-                          {m.name} ({m.contextSize})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* System Prompt */}
-                  <div className="space-y-1">
-                    <label className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold">Base System Instructions</label>
-                    <textarea
-                      value={creationSystemPrompt}
-                      onChange={(e) => setCreationSystemPrompt(e.target.value)}
-                      rows={4}
-                      className="w-full bg-[#0c0e17] border border-[#1f2235] rounded p-2.5 text-xs text-[#e8eaf6] focus:outline-none focus:border-[#b04cff] transition-colors resize-none scrollbar-thin leading-normal"
-                      placeholder="Provide clear system constraints and agentic instructions..."
-                    />
-                  </div>
-
-                  {/* Tool Access */}
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold">System Tool Integrations</label>
-                    <div className="border border-[#1f2235]/40 bg-[#0d0e17]/50 rounded p-2.5 space-y-2">
-                      {[
-                        { label: 'Web Search Grounding', checked: creationToolWebSearch, setter: setCreationToolWebSearch },
-                        { label: 'Code Sandbox Execution', checked: creationToolCodeExecution, setter: setCreationToolCodeExecution },
-                        { label: 'Vision Pipeline', checked: creationToolVision, setter: setCreationToolVision },
-                        { label: 'Episodic Memory Recall', checked: creationToolMemory, setter: setCreationToolMemory },
-                      ].map((tool, idx) => (
-                        <label key={idx} className="flex items-center gap-2 cursor-pointer group select-none">
-                          <input
-                            type="checkbox"
-                            checked={tool.checked}
-                            onChange={(e) => tool.setter(e.target.checked)}
-                            className="rounded border-[#1f2235] bg-[#0c0e17] text-[#b04cff] focus:ring-0 w-3 h-3 cursor-pointer"
-                          />
-                          <span className="text-[9px] text-[#808eb5] group-hover:text-[#b04cff] transition-colors">
-                            {tool.label}
-                          </span>
-                        </label>
-                      ))}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+                    <div className="text-[10px] text-[#5e6686] uppercase tracking-wider mb-2 leading-relaxed">
+                      // Select memory nodes on the left canvas to package them into an offline-first cognitive dataset.
                     </div>
-                  </div>
 
-                  {/* Training Sources count view */}
-                  <div className="space-y-1">
-                    <label className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold">Active Training Sources</label>
-                    <div className="border border-[#1f2235]/40 bg-[#0d0e17]/50 rounded p-2.5 text-[9px] text-[#4c5475] space-y-1.5 font-mono">
+                    {/* Selected Items List */}
+                    <div className="space-y-2">
                       {nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).length === 0 ? (
-                        <div className="text-[#4c5475] italic">// No active training sources selected in Training set. It will compile without custom cognitive overrides.</div>
+                        <div className="border border-[#1f2235]/30 bg-[#0d0e17]/50 rounded p-6 text-center text-[#4c5475] space-y-2">
+                          <Activity className="w-6 h-6 mx-auto opacity-30 text-[#808eb5]" />
+                          <div className="text-[10px] uppercase tracking-widest font-bold">No sources selected</div>
+                          <p className="text-[9px] leading-relaxed text-[#4c5475]">
+                            Use the "Use in training set" checkbox on any Memory node (Decision, Bug, Pattern, Context, etc.) on the canvas to include it here.
+                          </p>
+                        </div>
                       ) : (
-                        <>
-                          <div className="text-[#b8ff57] font-bold uppercase tracking-widest">
-                            Ingesting {nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).length} Knowledge Sources:
-                          </div>
-                          <ul className="list-disc list-inside space-y-1 pl-1">
-                            {nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).map(n => (
-                              <li key={n.id} className="truncate text-slate-300">
-                                {n.config.title || n.label}
-                              </li>
-                            ))}
-                          </ul>
-                        </>
+                        nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).map(node => {
+                          const matchingMem = memories.find(m => m.id === node.memoryId);
+                          return (
+                            <div 
+                              key={node.id} 
+                              className="border border-[#1f2235]/50 bg-[#0d0e17] rounded p-2.5 flex items-start justify-between gap-3 group hover:border-[#b8ff57]/40 transition-colors"
+                            >
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[8px] bg-[#1a1c2e] border border-[#1f2235] text-[#b8ff57] px-1 py-0.2 rounded font-mono uppercase tracking-widest leading-none">
+                                    {node.type.toUpperCase()}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-semibold truncate block leading-none">
+                                    {node.config.title || node.label}
+                                  </span>
+                                </div>
+                                <p className="text-[9px] text-[#4c5475] font-mono leading-relaxed mt-1 line-clamp-2">
+                                  {matchingMem ? matchingMem.content : (node.config.description || 'No content parsed')}
+                                </p>
+                              </div>
+
+                              <button
+                                onClick={() => {
+                                  setNodes(prev => prev.map(n => n.id === node.id ? {
+                                    ...n,
+                                    useInTrainingSet: false,
+                                    config: { ...n.config, useInTrainingSet: false }
+                                  } : n));
+                                  showNotification('Removed from training set');
+                                }}
+                                className="p-1 hover:bg-red-500/10 text-[#4c5475] hover:text-red-500 rounded transition-colors shrink-0"
+                                title="Exclude from training set"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })
                       )}
                     </div>
                   </div>
-                </div>
-              </div>
 
-              {/* Actions Compile trigger */}
-              <div className="p-4 border-t border-[#1f2235]/40 bg-[#0d0f19] shrink-0">
-                <button
-                  onClick={handleSpawnCompiledAgent}
-                  className="w-full bg-[#b04cff] hover:bg-[#a133ff] text-white py-2 rounded font-bold text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(176,76,255,0.25)] hover:scale-[1.01]"
-                >
-                  <Cpu className="w-3.5 h-3.5" />
-                  <span>Compile & Spawn Agent</span>
-                </button>
-              </div>
+                  {/* Actions Panel */}
+                  <div className="p-4 border-t border-[#1f2235]/40 bg-[#0d0f19] shrink-0 space-y-2">
+                    <button
+                      onClick={handleExportTrainingSet}
+                      disabled={nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).length === 0}
+                      className="w-full bg-[#b8ff57] hover:bg-[#a5e64e] disabled:bg-[#141624] disabled:text-[#4c5475] disabled:border-[#1f2235] border border-black/10 text-black py-2 rounded font-bold text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Export JSONL Dataset</span>
+                    </button>
+                    <div className="text-[8px] text-center text-[#4c5475] tracking-widest leading-none mt-1 uppercase">
+                      Generated as application/x-jsonlines
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* ===== AGENT SPARK COMPILER / CREATION CONTENT ===== */}
+              {((currentTab === 'workbench' && workbenchMode === 'creation') || currentTab === 'creation') && (
+                <>
+                  <div className="p-4 border-b border-[#1f2235]/40 bg-[#0d0f19] flex items-center gap-2 shrink-0">
+                    <Sparkles className="w-4 h-4 text-[#b04cff]" />
+                    <span className="text-xs font-bold tracking-wider text-[#e8eaf6] uppercase">Agent Compiler</span>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+                    <div className="text-[10px] text-[#5e6686] uppercase tracking-wider mb-2 leading-relaxed">
+                      // Compile and instantiate a new autonomous routing agent node directly onto the active workspace.
+                    </div>
+
+                    {/* Form Input fields */}
+                    <div className="space-y-3.5">
+                      {/* Agent Name */}
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold">Agent Identifier Name</label>
+                        <input
+                          type="text"
+                          value={creationAgentName}
+                          onChange={(e) => setCreationAgentName(e.target.value)}
+                          className="w-full bg-[#0c0e17] border border-[#1f2235] rounded px-3 py-1.5 text-xs text-[#e8eaf6] focus:outline-none focus:border-[#b04cff] transition-colors"
+                          placeholder="e.g., Fugu Reasoner Node"
+                        />
+                      </div>
+
+                      {/* Base Model Dropdown */}
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold">Base Model Engine</label>
+                        <select
+                          value={creationBaseModel}
+                          onChange={(e) => setCreationBaseModel(e.target.value as ModelName)}
+                          className="w-full bg-[#0c0e17] border border-[#1f2235] rounded px-2.5 py-1.5 text-xs text-[#e8eaf6] focus:outline-none focus:border-[#b04cff] transition-colors cursor-pointer"
+                        >
+                          {CATALOG_MODELS.filter(m => m.modality === 'Text').map(m => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} ({m.contextSize})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* System Prompt */}
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold">Base System Instructions</label>
+                        <textarea
+                          value={creationSystemPrompt}
+                          onChange={(e) => setCreationSystemPrompt(e.target.value)}
+                          rows={4}
+                          className="w-full bg-[#0c0e17] border border-[#1f2235] rounded p-2.5 text-xs text-[#e8eaf6] focus:outline-none focus:border-[#b04cff] transition-colors resize-none scrollbar-thin leading-normal"
+                          placeholder="Provide clear system constraints and agentic instructions..."
+                        />
+                      </div>
+
+                      {/* Tool Access */}
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold">System Tool Integrations</label>
+                        <div className="border border-[#1f2235]/40 bg-[#0d0e17]/50 rounded p-2.5 space-y-2">
+                          {[
+                            { label: 'Web Search Grounding', checked: creationToolWebSearch, setter: setCreationToolWebSearch },
+                            { label: 'Code Sandbox Execution', checked: creationToolCodeExecution, setter: setCreationToolCodeExecution },
+                            { label: 'Vision Pipeline', checked: creationToolVision, setter: setCreationToolVision },
+                            { label: 'Episodic Memory Recall', checked: creationToolMemory, setter: setCreationToolMemory },
+                          ].map((tool, idx) => (
+                            <label key={idx} className="flex items-center gap-2 cursor-pointer group select-none">
+                              <input
+                                type="checkbox"
+                                checked={tool.checked}
+                                onChange={(e) => tool.setter(e.target.checked)}
+                                className="rounded border-[#1f2235] bg-[#0c0e17] text-[#b04cff] focus:ring-0 w-3 h-3 cursor-pointer"
+                              />
+                              <span className="text-[9px] text-[#808eb5] group-hover:text-[#b04cff] transition-colors">
+                                {tool.label}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Training Sources count view */}
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold">Active Training Sources</label>
+                        <div className="border border-[#1f2235]/40 bg-[#0d0e17]/50 rounded p-2.5 text-[9px] text-[#4c5475] space-y-1.5 font-mono">
+                          {nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).length === 0 ? (
+                            <div className="text-[#4c5475] italic">// No active training sources selected in Training set. It will compile without custom cognitive overrides.</div>
+                          ) : (
+                            <>
+                              <div className="text-[#b8ff57] font-bold uppercase tracking-widest">
+                                Ingesting {nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).length} Knowledge Sources:
+                              </div>
+                              <ul className="list-disc list-inside space-y-1 pl-1">
+                                {nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).map(n => (
+                                  <li key={n.id} className="truncate text-slate-300">
+                                    {n.config.title || n.label}
+                                  </li>
+                                ))}
+                              </ul>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions Compile trigger */}
+                  <div className="p-4 border-t border-[#1f2235]/40 bg-[#0d0f19] shrink-0">
+                    <button
+                      onClick={handleSpawnCompiledAgent}
+                      className="w-full bg-[#b04cff] hover:bg-[#a133ff] text-white py-2 rounded font-bold text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(176,76,255,0.25)] hover:scale-[1.01]"
+                    >
+                      <Cpu className="w-3.5 h-3.5" />
+                      <span>Compile & Spawn Agent</span>
+                    </button>
+                  </div>
+                </>
+              )}
+
             </div>
           )}
         </div>
 
         {/* BOTTOM EXECUTION LOG DRAWER (SEAMLESS TELEMETRY + ACTION RUN HISTORY) */}
-        {currentTab === 'aiwonder' && isBottomDrawerOpen && (
+        {(currentTab === 'aiwonder' || currentTab === 'workbench') && isBottomDrawerOpen && (
           <div className="h-64 border-t border-[#1f2235]/40 bg-[#07080d] flex flex-col shrink-0 z-10 overflow-hidden relative">
             
             {/* Drawer Tab Header */}
