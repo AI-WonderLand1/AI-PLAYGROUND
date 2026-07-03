@@ -72,7 +72,7 @@ const INITIAL_EVENTS: NexusEvent[] = [
 ];
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'training' | 'creation' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings'>('models');
+  const [currentTab, setCurrentTab] = useState<'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'workbench' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings'>('models');
   const [modelsCatalogSubView, setModelsCatalogSubView] = useState<'directory' | 'infrastructure'>('directory');
   const [selectedCatalogModelId, setSelectedCatalogModelId] = useState<ModelName>('fugu-ultra');
   const [topSearch, setTopSearch] = useState('');
@@ -366,10 +366,9 @@ export default function App() {
             { id: 'models', label: 'Models', activeOn: ['models'], subView: 'directory' },
             { id: 'playground', label: 'Fusion', activeOn: [] },
             { id: 'playground', label: 'Chat', activeOn: ['playground'] },
-            { id: 'aiwonder', label: 'AI-Wonder', activeOn: ['aiwonder'] },
-            { id: 'training', label: 'Training', activeOn: ['training'] },
-            { id: 'creation', label: 'Creation', activeOn: ['creation'] },
-            { id: 'docs', label: 'Docs', activeOn: ['docs'] },
+             { id: 'aiwonder', label: 'AI-Wonder', activeOn: ['aiwonder', 'workbench'] },
+             { id: 'workbench', label: 'Workbench', activeOn: ['workbench'] },
+             { id: 'docs', label: 'Docs', activeOn: ['docs'] },
             { id: 'activity', label: 'Activity', activeOn: ['activity'] },
             { id: 'analytics', label: 'Analytics', activeOn: ['analytics'] },
             { id: 'apikeys', label: 'API Keys', activeOn: ['apikeys'] },
@@ -460,7 +459,7 @@ export default function App() {
         )}
 
         {/* AI-WONDER Canvas Orchestrator View (Merged Memory Core & Nexus Monitor) */}
-        {(currentTab === 'aiwonder' || currentTab === 'training' || currentTab === 'creation') && (
+        {(currentTab === 'aiwonder' || currentTab === 'workbench') && (
           <AIWonderCanvas
             memories={memories}
             events={events}

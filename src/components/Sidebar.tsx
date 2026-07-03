@@ -1,4 +1,5 @@
-import { Settings, Sliders, MessageSquare, Info, ChevronRight, ChevronDown, Bot, Plus, Trash2, GraduationCap, X, Key } from 'lucide-react';
+import { useState } from 'react';
+import { Settings, Sliders, MessageSquare, Info, ChevronRight, ChevronDown, Bot, Plus, Trash2, GraduationCap, X, Key, RotateCcw, Filter } from 'lucide-react';
 import { PlaygroundConfig, ModelName, AIModule, TrainingExample } from '../types';
 import { cn } from '../utils';
 
@@ -46,11 +47,50 @@ const MODELS: { value: ModelName; label: string; desc: string; provider: string 
   { value: 'mai-voice-2', label: 'MAI-Voice-2', desc: 'Microsoft Azure expressive text-to-speech with Ssml style support, speeds, and natural output', provider: 'Microsoft' },
 ];
 
+const PROVIDERS = Array.from(new Set(MODELS.map(m => m.provider))).sort();
+
 export function Sidebar({ modules, activeId, onSelect, onUpdate, onAdd, onRemove, onOpenKeysModal }: SidebarProps) {
   const activeModule = modules.find(m => m.id === activeId) || modules[0];
+  const [providerFilter, setProviderFilter] = useState<string>('All');
 
   const updateConfig = (updates: Partial<PlaygroundConfig>) => {
     onUpdate(activeId, { config: { ...activeModule.config, ...updates } });
+  };
+
+  const resetAll = () => {
+    onUpdate(activeId, {
+      config: {
+        model: MODELS[0].value,
+        systemInstruction: '',
+        temperature: 0.7,
+        topP: 0.9,
+        topK: 40,
+        showRobot: false,
+      },
+      training: []
+    });
+    setProviderFilter('All');
+  };
+
+  const resetModelSelection = () => {
+    updateConfig({ model: MODELS[0].value });
+    setProviderFilter('All');
+  };
+
+  const resetParameters = () => {
+    updateConfig({ temperature: 0.7, topP: 0.9, topK: 40 });
+  };
+
+  const resetSystemInstruction = () => {
+    updateConfig({ systemInstruction: '' });
+  };
+
+  const resetTraining = () => {
+    onUpdate(activeId, { training: [] });
+  };
+
+  const resetInteractiveMode = () => {
+    updateConfig({ showRobot: false });
   };
 
   const addTrainingExample = () => {
@@ -80,12 +120,21 @@ export function Sidebar({ modules, activeId, onSelect, onUpdate, onAdd, onRemove
       <div className="p-4 border-b border-[#2a2a2a] bg-[#0a0a0a]">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-serif italic text-xs uppercase tracking-widest text-[#888]">Modules</h2>
-          <button 
-            onClick={onAdd}
-            className="p-1 hover:bg-[#2a2a2a] text-[#888] hover:text-[#E4E3E0] transition-all"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={resetAll}
+              className="p-1 hover:bg-[#2a2a2a] text-[#888] hover:text-red-500 transition-all"
+              title="Reset All"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+            <button 
+              onClick={onAdd}
+              className="p-1 hover:bg-[#2a2a2a] text-[#888] hover:text-[#E4E3E0] transition-all"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           {modules.map(m => (
@@ -129,7 +178,16 @@ export function Sidebar({ modules, activeId, onSelect, onUpdate, onAdd, onRemove
 
           {/* Robot Mode */}
           <section>
-            <label className="block text-[11px] font-serif italic text-[#888] uppercase mb-3 text-emerald-500">Interactive Mode</label>
+            <div className="flex items-center justify-between mb-3">
+              <label className="block text-[11px] font-serif italic text-[#888] uppercase mb-3 text-emerald-500">Interactive Mode</label>
+              <button 
+                onClick={resetInteractiveMode}
+                className="p-1 hover:bg-[#2a2a2a] text-[#888] hover:text-[#E4E3E0] transition-all"
+                title="Disable Robot Mode"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+            </div>
             <button
               onClick={() => updateConfig({ showRobot: !activeModule.config.showRobot })}
               className={cn(
@@ -153,17 +211,41 @@ export function Sidebar({ modules, activeId, onSelect, onUpdate, onAdd, onRemove
           {/* Model Selection */}
           <section>
             <div className="flex items-center justify-between mb-3">
-              <label className="text-[11px] font-serif italic text-[#888] uppercase">Model Selection</label>
-              <button
-                onClick={onOpenKeysModal}
-                className="flex items-center gap-1 text-[9px] font-mono text-[#b8ff57] hover:underline cursor-pointer"
-              >
-                <Key className="w-2.5 h-2.5" />
-                <span>API KEYS</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <label className="text-[11px] font-serif italic text-[#888] uppercase">Model Selection</label>
+                <button 
+                  onClick={resetModelSelection}
+                  className="p-1 hover:bg-[#2a2a2a] text-[#888] hover:text-[#E4E3E0] transition-all"
+                  title="Reset Model Selection"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="relative group">
+                  <select
+                    value={providerFilter}
+                    onChange={(e) => setProviderFilter(e.target.value)}
+                    className="bg-transparent border border-[#2a2a2a] text-[9px] font-mono text-[#888] px-1 py-0.5 rounded appearance-none focus:outline-none focus:border-[#E4E3E0] cursor-pointer"
+                  >
+                    <option value="All" className="bg-[#141414]">All Providers</option>
+                    {PROVIDERS.map(p => (
+                      <option key={p} value={p} className="bg-[#141414]">{p}</option>
+                    ))}
+                  </select>
+                  <Filter className="w-2 h-2 absolute right-1.5 top-1.5 text-[#555] pointer-events-none" />
+                </div>
+                <button
+                  onClick={onOpenKeysModal}
+                  className="flex items-center gap-1 text-[9px] font-mono text-[#b8ff57] hover:underline cursor-pointer"
+                >
+                  <Key className="w-2.5 h-2.5" />
+                  <span>API KEYS</span>
+                </button>
+              </div>
             </div>
             <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 border-r border-[#1a1a1a] scrollbar-thin">
-              {MODELS.map((m) => (
+              {MODELS.filter(m => providerFilter === 'All' || m.provider === providerFilter).map((m) => (
                 <button
                   key={m.value}
                   onClick={() => updateConfig({ model: m.value })}
@@ -195,7 +277,16 @@ export function Sidebar({ modules, activeId, onSelect, onUpdate, onAdd, onRemove
 
           {/* System Instruction */}
           <section>
-            <label className="block text-[11px] font-serif italic text-[#888] uppercase mb-3">System Instruction</label>
+            <div className="flex items-center justify-between mb-3">
+              <label className="block text-[11px] font-serif italic text-[#888] uppercase">System Instruction</label>
+              <button 
+                onClick={resetSystemInstruction}
+                className="p-1 hover:bg-[#2a2a2a] text-[#888] hover:text-[#E4E3E0] transition-all"
+                title="Clear Instruction"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+            </div>
             <textarea
               value={activeModule.config.systemInstruction}
               onChange={(e) => updateConfig({ systemInstruction: e.target.value })}
@@ -211,12 +302,21 @@ export function Sidebar({ modules, activeId, onSelect, onUpdate, onAdd, onRemove
                 <GraduationCap className="w-3.5 h-3.5" />
                 <span className="text-[11px] font-serif italic uppercase">Training (Few-Shot)</span>
               </div>
-              <button 
-                onClick={addTrainingExample}
-                className="p-1 hover:bg-[#2a2a2a] text-[#888] hover:text-[#E4E3E0] transition-all"
-              >
-                <Plus className="w-3 h-3" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={resetTraining}
+                  className="p-1 hover:bg-[#2a2a2a] text-[#888] hover:text-red-500 transition-all"
+                  title="Reset Training"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                </button>
+                <button 
+                  onClick={addTrainingExample}
+                  className="p-1 hover:bg-[#2a2a2a] text-[#888] hover:text-[#E4E3E0] transition-all"
+                >
+                  <Plus className="w-3 h-3" />
+                </button>
+              </div>
             </div>
             <div className="space-y-4">
               {activeModule.training.map((ex, idx) => (
@@ -257,9 +357,18 @@ export function Sidebar({ modules, activeId, onSelect, onUpdate, onAdd, onRemove
 
           {/* Parameters */}
           <section className="space-y-6">
-            <div className="flex items-center gap-2 text-[#888] mb-4">
-              <Sliders className="w-3 h-3" />
-              <span className="text-[11px] font-serif italic uppercase">Parameters</span>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2 text-[#888]">
+                <Sliders className="w-3 h-3" />
+                <span className="text-[11px] font-serif italic uppercase">Parameters</span>
+              </div>
+              <button 
+                onClick={resetParameters}
+                className="p-1 hover:bg-[#2a2a2a] text-[#888] hover:text-[#E4E3E0] transition-all"
+                title="Reset Parameters"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
             </div>
 
             {[

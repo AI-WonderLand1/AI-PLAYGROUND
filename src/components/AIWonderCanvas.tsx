@@ -72,7 +72,7 @@ interface AIWonderCanvasProps {
   onDeleteMemory: (id: string) => void;
   onClearEvents: () => void;
   onDismissEvent: (id: string) => void;
-  currentTab?: 'aiwonder' | 'training' | 'creation';
+   currentTab?: 'aiwonder' | 'workbench' | 'training' | 'creation';
   onTabChange?: (tab: 'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'training' | 'creation') => void;
 }
 
@@ -246,16 +246,20 @@ export function AIWonderCanvas({
   const [memoryFormType, setMemoryFormType] = useState<MemoryNode['type']>('decision');
   const [memoryFormContent, setMemoryFormContent] = useState('');
 
-  // Bottom drawer states
-  const [isBottomDrawerOpen, setIsBottomDrawerOpen] = useState(true);
-  const [bottomDrawerTab, setBottomDrawerTab] = useState<'telemetry' | 'step_results' | 'execution_trace'>('telemetry');
-  const [executionLog, setExecutionLog] = useState<string[]>(['[System] Orchestration Engine initialized.', '[Trigger] Webhook listener connected.']);
-  const [selectedLogNodeId, setSelectedLogNodeId] = useState<string>('ai-agent-1');
-  const [activeTelemetryChip, setActiveTelemetryChip] = useState<'all' | 'error' | 'warning' | 'info'>('all');
-  const [telemetrySearch, setTelemetrySearch] = useState('');
+   // Bottom drawer states
+   const [isBottomDrawerOpen, setIsBottomDrawerOpen] = useState(true);
+   const [bottomDrawerTab, setBottomDrawerTab] = useState<'telemetry' | 'step_results' | 'execution_trace'>('telemetry');
+   const [executionLog, setExecutionLog] = useState<string[]>(['[System] Orchestration Engine initialized.', '[Trigger] Webhook listener connected.']);
+   const [selectedLogNodeId, setSelectedLogNodeId] = useState<string>('ai-agent-1');
+   const [activeTelemetryChip, setActiveTelemetryChip] = useState<'all' | 'error' | 'warning' | 'info'>('all');
+   const [telemetrySearch, setTelemetrySearch] = useState('');
 
-  // Gemini Diagnostic Fix in Bottom Drawer
-  const [aiExplanations, setAiExplanations] = useState<Record<string, { explanation: string; fix: string; loading: boolean }>>({});
+   // Workbench sub-drawer states
+   const [isSubDrawerOpen, setIsSubDrawerOpen] = useState(false);
+   const [workbenchMode, setWorkbenchMode] = useState<'training' | 'creation'>('training');
+
+   // Gemini Diagnostic Fix in Bottom Drawer
+   const [aiExplanations, setAiExplanations] = useState<Record<string, { explanation: string; fix: string; loading: boolean }>>({});
 
   // Execution outputs per node
   const [nodeOutputs, setNodeOutputs] = useState<Record<string, {
@@ -380,12 +384,13 @@ export function AIWonderCanvas({
     setIsAddPanelOpen(true);
   };
 
-  // Start connecting pins
-  const handleStartConnection = (nodeId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (currentTab === 'training') return;
-    setConnectingPin({ nodeId, type: 'output' });
-  };
+   // Handle starting connection
+   const handleStartConnection = (nodeId: string, e: React.MouseEvent) => {
+     e.stopPropagation();
+     if (currentTab === 'training' || (currentTab === 'workbench' && workbenchMode === 'training')) return;
+     setConnectingPin({ nodeId, type: 'output' });
+   };
+
 
   // Complete connection on input pin click
   const handleConnectTo = (nodeId: string, e: React.MouseEvent) => {
