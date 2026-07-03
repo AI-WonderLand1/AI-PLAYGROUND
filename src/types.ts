@@ -107,3 +107,60 @@ export interface NexusEvent {
   stack?: string;
   timestamp: number;
 }
+
+export interface WorkflowNode {
+  id: string;
+  type: string;
+  category: 'trigger' | 'app' | 'core' | 'ai' | 'dream_maker' | 'storage';
+  label: string;
+  x: number;
+  y: number;
+  config: {
+    title?: string;
+    description?: string;
+    code?: string;
+    webhookUrl?: string;
+    scheduleInterval?: string;
+    scheduleEnabled?: boolean;
+    cronExpression?: string;
+    model?: ModelName;
+    systemPrompt?: string;
+    temperature?: number;
+    topP?: number;
+    maxTokens?: number;
+    promptTemplate?: string;
+    httpMethod?: string;
+    httpUrl?: string;
+    httpHeaders?: string;
+    httpBody?: string;
+    conditionOperator?: 'equals' | 'not_equals' | 'greater_than' | 'less_than' | 'contains' | 'starts_with' | 'regex';
+    conditionLeft?: string;
+    conditionRight?: string;
+    switchCases?: { value: string; label: string }[];
+    switchOperator?: 'equals' | 'not_equals' | 'greater_than' | 'less_than' | 'contains' | 'starts_with' | 'regex';
+    retryCount?: number;
+    retryDelay?: number;
+    continueOnError?: boolean;
+    mockInputs?: Record<string, string>;
+    mockOutputs?: Record<string, any>;
+    useInTrainingSet?: boolean;
+    loopItems?: string;
+    loopVarName?: string;
+    whileCondition?: string;
+    whileMaxIterations?: number;
+    mergeMode?: 'array' | 'object';
+    splitMode?: 'first' | 'all';
+    buffer?: string;
+    query?: string;
+  };
+  memoryId?: string;
+  useInTrainingSet?: boolean;
+}
+
+export interface WorkflowConnection {
+  id: string;
+  fromId: string;
+  toId: string;
+  isTrainingEdge?: boolean;
+  fromPort?: string;
+}

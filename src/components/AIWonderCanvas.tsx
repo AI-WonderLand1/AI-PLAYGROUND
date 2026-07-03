@@ -2,71 +2,24 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Play, Save, Share2, MoreHorizontal, Clock, Plus, Search, 
   Trash2, X, ToggleLeft, ToggleRight, Database, ShieldAlert, 
-  Zap, Cpu, Code, HelpCircle, Sparkles, Info, AlertTriangle, 
+   Zap, Cpu, Code, HelpCircle, Sparkles, Info, AlertTriangle, AlertCircle, 
+
   Terminal, Layers, FileText, Check, Settings, Globe, Mail, 
   GitBranch, Filter, Split, MessageSquare, BookOpen, Download, 
   RefreshCw, ChevronDown, ChevronUp, ChevronRight, Link, HelpCircle as HelpIcon,
   Copy, ExternalLink, Activity, ArrowRight, BarChart2, Briefcase, 
   Key, Sliders, Upload, Network, Eye, History, RotateCcw
 } from 'lucide-react';
-import { MemoryNode, NexusEvent, ModelName } from '../types';
+import { MemoryNode, NexusEvent, ModelName, WorkflowNode, WorkflowConnection } from '../types';
 import { cn, getOpenRouterModel } from '../utils';
 import { CATALOG_MODELS } from './ModelsCatalog';
 import { GoogleGenAI } from '@google/genai';
 import { WORKFLOW_TEMPLATES, WorkflowTemplate } from '../data/workflowTemplates';
 import { resolveExpressions, resolveConfig, ExpressionContext } from '../utils/expressionParser';
-import { parseExpression } from 'cron-parser';
+import cronParser from 'cron-parser';
 
 // Types for workflow node graph
-export interface WorkflowNode {
-  id: string;
-  type: string;
-  category: 'trigger' | 'app' | 'core' | 'ai' | 'dream_maker';
-  label: string;
-  x: number;
-  y: number;
-  config: {
-    title?: string;
-    description?: string;
-    // Core parameters
-    code?: string;
-    webhookUrl?: string;
-    scheduleInterval?: string;
-    scheduleEnabled?: boolean;
-    cronExpression?: string;
-    model?: ModelName;
-    systemPrompt?: string;
-    temperature?: number;
-    topP?: number;
-    maxTokens?: number;
-    promptTemplate?: string;
-    httpMethod?: string;
-    httpUrl?: string;
-    httpHeaders?: string;
-    httpBody?: string;
-    conditionOperator?: 'equals' | 'not_equals' | 'greater_than' | 'less_than' | 'contains' | 'starts_with' | 'regex';
-    conditionLeft?: string;
-    conditionRight?: string;
-    switchCases?: { value: string; label: string }[];
-    switchOperator?: 'equals' | 'not_equals' | 'greater_than' | 'less_than' | 'contains' | 'starts_with' | 'regex';
-    retryCount?: number;
-    retryDelay?: number;
-    continueOnError?: boolean;
-    mockInputs?: Record<string, string>;
-    mockOutputs?: Record<string, any>;
-    useInTrainingSet?: boolean;
-  };
-  memoryId?: string; // Links to global memories
-  useInTrainingSet?: boolean;
-}
-
-export interface WorkflowConnection {
-  id: string;
-  fromId: string;
-  toId: string;
-  isTrainingEdge?: boolean;
-  fromPort?: string;
-}
+export type { WorkflowNode, WorkflowConnection } from '../types';
 
 interface WorkflowVersion {
   id: string;
@@ -112,7 +65,8 @@ const scheduleIntervalToMs = (interval: string): number => {
 // Helper: compute next N execution times from a cron expression
 const getCronNextTimes = (expr: string, count: number): Date[] => {
   try {
-    const interval = parseExpression(expr, { tz: undefined });
+    const interval = cronParser.parse(expr, { tz: undefined })
+;
     const times: Date[] = [];
     for (let i = 0; i < count; i++) {
       times.push(interval.next().toDate());
@@ -126,7 +80,8 @@ const getCronNextTimes = (expr: string, count: number): Date[] => {
 // Helper: compute ms until next cron execution
 const getCronNextDelay = (expr: string): number | null => {
   try {
-    const interval = parseExpression(expr, { tz: undefined });
+    const interval = cronParser.parse(expr, { tz: undefined })
+;
     const next = interval.next().toDate();
     return Math.max(1000, next.getTime() - Date.now());
   } catch {
@@ -227,10 +182,19 @@ const INITIAL_NODES: WorkflowNode[] = [
     },
     memoryId: 'mem-dec-initial'
   },
-   {
-// ... (lines 231-242)
-     memoryId: 'mem-bug-initial'
-   },
+  {
+    id: 'memory-bug-1',
+    type: 'bug',
+    category: 'dream_maker',
+    label: 'Bug Anomaly',
+    x: 680,
+    y: 300,
+    config: {
+      title: 'TypeError in AppContainer',
+      description: 'Asynchronous state loading delay on map() array render.'
+    },
+    memoryId: 'mem-bug-initial'
+  },
    {
      id: 'split-1',
      type: 'split',
@@ -238,21 +202,22 @@ const INITIAL_NODES: WorkflowNode[] = [
      label: 'Data Splitter',
      x: 400,
      y: 500,
-     config: {
-       mode: 'all', // 'first' | 'all'
-     },
-   },
-   {
-     id: 'merge-1',
-     type: 'merge',
-     category: 'core',
-     label: 'Data Merger',
-     x: 600,
-     y: 500,
-     config: {
-       mode: 'array', // 'array' | 'object' | 'text'
-     },
-   },
+      config: {
+        splitMode: 'all', // 'first' | 'all'
+      },
+    },
+    {
+      id: 'merge-1',
+      type: 'merge',
+      category: 'core',
+      label: 'Data Merger',
+      x: 600,
+      y: 500,
+      config: {
+        mergeMode: 'array', // 'array' | 'object' | 'text'
+      },
+    },
+
  ];
 
 const INITIAL_CONNECTIONS: WorkflowConnection[] = [
@@ -363,7 +328,7 @@ export function AIWonderCanvas({
 
   // Execution outputs per node
   const [nodeOutputs, setNodeOutputs] = useState<Record<string, {
-    status: 'idle' | 'running' | 'success' | 'error';
+    status: 'idle' | 'running' | 'success' | 'error' | 'warning';
     output: string;
     timestamp: number;
     duration?: number;
@@ -1177,7 +1142,8 @@ export function AIWonderCanvas({
             const raw = cfg.loopItems || '[1, 2, 3]';
             let items: any[];
             try { items = JSON.parse(raw); }
-            catch { items = raw.split(',').map(s => s.trim()); }
+             catch { items = raw.split(',').map((s: string) => s.trim()); }
+
             if (!Array.isArray(items)) items = [items];
             setNodeOutputs(prev => ({
               ...prev,
@@ -1232,6 +1198,80 @@ export function AIWonderCanvas({
               [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✂️ ${node.label} — ${items.length} items, mode: ${mode} (${Date.now() - nodeStart}ms)`]);
+          } else if (node.category === 'storage' && node.type === 'window_buffer') {
+            // Simple buffer that stores the last N inputs/outputs
+            const maxSize = 10;
+            let buffer: any[] = [];
+            try { buffer = JSON.parse(node.config.buffer || '[]'); } catch {}
+            buffer.push(input);
+            if (buffer.length > maxSize) buffer = buffer.slice(-maxSize);
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output: JSON.stringify(buffer, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🪟 ${node.label} — buffered input (${Date.now() - nodeStart}ms)`]);
+          } else if (node.category === 'storage' && node.type === 'vector_store') {
+            // Vector Store - mock storing and retrieving vectors
+            const rows = Math.max(1, Math.floor(input.length / 100));
+            const items = Array.from({length: rows}, (_, i) => ({
+              id: `vec-${i}`,
+              score: 0.8 - (i * 0.01),
+              metadata: { text: `Similar to ${input.slice(0, 20)}...` }
+            }));
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: {
+                status: 'success',
+                output: JSON.stringify({ query: input, results: items, rowCount: rows }, null, 2),
+                timestamp: Date.now(),
+                duration: Date.now() - nodeStart
+              }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🗃️ ${node.label} — queried ${rows} vectors (${Date.now() - nodeStart}ms)`]);
+          } else if (node.category === 'core' && node.type === 'workflow_tools') {
+            // Workflow tool execution - direct manipulation
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output: `Executed ${node.label} with input ${input.slice(0, Math.min(50, input.length))}`, timestamp: Date.now(), duration: Date.now() - nodeStart }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔧 ${node.label} — completed (${Date.now() - nodeStart}ms)`]);
+          } else if (node.category === 'core' && node.type === 'custom_tool') {
+            // Custom tool execution
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output: `Custom tool executed with parameters: query="${input.slice(0, 30)}"`, timestamp: Date.now(), duration: Date.now() - nodeStart }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✏️ ${node.label} — completed (${Date.now() - nodeStart}ms)`]);
+          } else if (node.category === 'ai' && node.type === 'core_brain') {
+            // Advanced AI brain agent
+            const result = await executeAINode({ ...node, config: cfg }, `Core Brain Analysis: ${input}`);
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output: result.output, timestamp: Date.now(), duration: Date.now() - nodeStart, tokens: result.tokens }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🧠 ${node.label} — ${result.tokens ? result.tokens + ' tokens' : 'success'} (${Date.now() - nodeStart}ms)`]);
+          } else if (node.category === 'ai' && node.type === 'llm_chain') {
+            // Basic LLM chain
+            const result = await executeAINode({ ...node, config: cfg }, `Chain Step: ${input}`);
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output: result.output, timestamp: Date.now(), duration: Date.now() - nodeStart, tokens: result.tokens }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📜 ${node.label} — ${result.tokens ? result.tokens + ' tokens' : 'success'} (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'document') {
+            // Document Manager - read/write files
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output: `Document processed: ${input.slice(0, 50)}`, timestamp: Date.now(), duration: Date.now() - nodeStart }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📄 ${node.label} — processed (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'utilities') {
+            // Utility Toolbox - string, date and data manipulation
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output: `Utility applied to: ${input.slice(0, 50)}`, timestamp: Date.now(), duration: Date.now() - nodeStart }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🛠️ ${node.label} — applied (${Date.now() - nodeStart}ms)`]);
           } else {
             // Non-AI/HTTP/code nodes: pass input through as output
             setNodeOutputs(prev => ({
@@ -1241,6 +1281,7 @@ export function AIWonderCanvas({
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — completed (${Date.now() - nodeStart}ms)`]);
           }
           nodeSuccess = true;
+          showRightNotification(`${node.label} completed`, 'success');
         } catch (err: any) {
           lastError = err;
           setNodeOutputs(prev => ({
@@ -1248,6 +1289,7 @@ export function AIWonderCanvas({
             [nodeId]: { status: 'error', output: '', timestamp: Date.now(), duration: Date.now() - nodeStart, error: err.message }
           }));
           setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ ${node.label} — ${err.message} (${Date.now() - nodeStart}ms)`]);
+          showRightNotification(`${node.label} failed: ${err.message}`, 'error');
         } finally {
           setExecutingNodeIds(prev => {
             const next = new Set(prev);
@@ -1301,11 +1343,12 @@ export function AIWonderCanvas({
     showNotification(`Workflow executed in ${elapsed}ms`);
   } catch (err: any) {
     setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🛑 Workflow aborted — ${err.message}`]);
-    showNotification(`Workflow failed: ${err.message}`, 'error');
-  } finally {
-    setExecutingNodeIds(new Set());
-  }
-  };
+     showNotification(`Workflow failed: ${err.message}`);
+   } finally {
+     setExecutingNodeIds(new Set());
+   }
+   };
+
 
   // Ref + effect for schedule/cron triggers
   const scheduleTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
@@ -2192,7 +2235,8 @@ Respond ONLY in JSON matching this format:
                     app: 'border-l-4 border-l-[#ffad33] border-[#1e2235]/60 hover:border-[#ffad33]/70 bg-[#0e0d14]',
                     core: 'border-l-4 border-l-[#00e5a0] border-[#1e2235]/60 hover:border-[#00e5a0]/70 bg-[#090f12]',
                     ai: 'border-l-4 border-l-[#b04cff] border-[#1e2235]/60 hover:border-[#b04cff]/70 bg-[#0d0c15]',
-                    dream_maker: 'border-l-4 border-l-[#b8ff57] border-[#1e2235]/60 hover:border-[#b8ff57]/70 bg-[#0a0f0d]'
+                    dream_maker: 'border-l-4 border-l-[#b8ff57] border-[#1e2235]/60 hover:border-[#b8ff57]/70 bg-[#0a0f0d]',
+                    storage: 'border-l-4 border-l-[#38c8ff] border-[#1e2235]/60 hover:border-[#38c8ff]/70 bg-[#0c121a]'
                   };
 
                   const CATEGORY_DOTS = {
@@ -2200,7 +2244,8 @@ Respond ONLY in JSON matching this format:
                     app: 'bg-[#ffad33]',
                     core: 'bg-[#00e5a0]',
                     ai: 'bg-[#b04cff]',
-                    dream_maker: 'bg-[#b8ff57]'
+                    dream_maker: 'bg-[#b8ff57]',
+                    storage: 'bg-[#38c8ff]'
                   };
 
                   return (
@@ -2943,12 +2988,14 @@ Respond ONLY in JSON matching this format:
             {/* 2. Apps */}
             <div className="space-y-1.5">
               <h5 className="text-[9px] text-[#ffad33] uppercase tracking-widest font-bold">// Integration Apps</h5>
-              {[
-                { type: 'http', label: 'HTTP Request', desc: 'Send HTTP requests to external APIs and services' },
-                { type: 'slack', label: 'Slack Sender', desc: 'Post payloads or errors directly to workspace' },
-                { type: 'gmail', label: 'Gmail Dispatcher', desc: 'Auto-send summary alerts or notifications' },
-                { type: 'github', label: 'GitHub Sync', desc: 'Sync bug issues from repository events' }
-              ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
+               {[
+                 { type: 'http', label: 'HTTP Request', desc: 'Send HTTP requests to external APIs and services' },
+                 { type: 'slack', label: 'Slack Sender', desc: 'Post payloads or errors directly to workspace' },
+                 { type: 'gmail', label: 'Gmail Dispatcher', desc: 'Auto-send summary alerts or notifications' },
+                 { type: 'github', label: 'GitHub Sync', desc: 'Sync bug issues from repository events' },
+                 { type: 'document', label: 'Document Manager', desc: 'Read and write files, documents and knowledge bases' },
+                 { type: 'utilities', label: 'Utility Toolbox', desc: 'General purpose string, date and data manipulation' },
+               ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
               .map(node => (
                 <button
                   key={node.type}
@@ -2967,17 +3014,19 @@ Respond ONLY in JSON matching this format:
             {/* 3. Core Logic */}
             <div className="space-y-1.5">
               <h5 className="text-[9px] text-[#00e5a0] uppercase tracking-widest font-bold">// Core logic</h5>
-              {[
-                { type: 'code', label: 'JS Code Engine', desc: 'Sandbox runtime to manipulate JSON logs' },
-                { type: 'if', label: 'IF Condition', desc: 'Branch workflow: True/False based on condition' },
-                { type: 'switch', label: 'Switch', desc: 'Multi-way branching with multiple case values' },
-                { type: 'loop_for', label: 'Loop (For)', desc: 'Iterate over an array of items, executing downstream per item' },
-                { type: 'loop_while', label: 'Loop (While)', desc: 'Repeat downstream execution while condition is true' },
-                { type: 'filter', label: 'Data Filter', desc: 'Branch execution path based on JSON schema variables' },
-                { type: 'merge', label: 'Merge', desc: 'Combine multiple upstream inputs into one (array/object/text)' },
-                { type: 'split', label: 'Split', desc: 'Split array data into individual items for downstream' },
-                { type: 'router', label: 'Variable Router', desc: 'Directs outputs depending on server status triggers' }
-              ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
+               {[
+                 { type: 'code', label: 'JS Code Engine', desc: 'Sandbox runtime to manipulate JSON logs' },
+                 { type: 'if', label: 'IF Condition', desc: 'Branch workflow: True/False based on condition' },
+                 { type: 'switch', label: 'Switch', desc: 'Multi-way branching with multiple case values' },
+                 { type: 'loop_for', label: 'Loop (For)', desc: 'Iterate over an array of items, executing downstream per item' },
+                 { type: 'loop_while', label: 'Loop (While)', desc: 'Repeat downstream execution while condition is true' },
+                 { type: 'filter', label: 'Data Filter', desc: 'Branch execution path based on JSON schema variables' },
+                 { type: 'merge', label: 'Merge', desc: 'Combine multiple upstream inputs into one (array/object/text)' },
+                 { type: 'split', label: 'Split', desc: 'Split array data into individual items for downstream' },
+                 { type: 'router', label: 'Variable Router', desc: 'Directs outputs depending on server status triggers' },
+                 { type: 'workflow_tools', label: 'Workflow Toolset', desc: 'Special tools for graph manipulation and routing' },
+                 { type: 'custom_tool', label: 'Custom Tool Node', desc: 'User-defined tool implementation' },
+               ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
               .map(node => (
                 <button
                   key={node.type}
@@ -2996,11 +3045,13 @@ Respond ONLY in JSON matching this format:
             {/* 4. AI Engine */}
             <div className="space-y-1.5">
               <h5 className="text-[9px] text-[#b04cff] uppercase tracking-widest font-bold">// AI Engine (NEXUS)</h5>
-              {[
-                { type: 'agent', label: 'Nexus AI Agent', desc: 'Launches custom system prompt and telemetry rules via Gemini model' },
-                { type: 'prompt', label: 'Prompt Template', desc: 'Injects context logs dynamically into styled prompts' },
-                { type: 'rag', label: 'Vector Search DB', desc: 'Queries vector index clusters for previous similar bugs' }
-              ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
+               {[
+                 { type: 'agent', label: 'Nexus AI Agent', desc: 'Launches custom system prompt and telemetry rules via Gemini model' },
+                 { type: 'prompt', label: 'Prompt Template', desc: 'Injects context logs dynamically into styled prompts' },
+                 { type: 'rag', label: 'Vector Search DB', desc: 'Queries vector index clusters for previous similar bugs' },
+                 { type: 'core_brain', label: 'Core Brain Agent', desc: 'Advanced cognitive agent with recursive reasoning' },
+                 { type: 'llm_chain', label: 'Basic LLM Chain', desc: 'Sequential chain of LLM prompt executions' },
+               ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
               .map(node => (
                 <button
                   key={node.type}
@@ -3016,31 +3067,54 @@ Respond ONLY in JSON matching this format:
               ))}
             </div>
 
-            {/* 5. DreamMakerHub (Memory Core Nodes) */}
-            <div className="space-y-1.5">
-              <h5 className="text-[9px] text-[#b8ff57] uppercase tracking-widest font-bold">// DreamMakerHub</h5>
-              {[
-                { type: 'decision', label: 'Decision Node', desc: 'Durable architectural decision context memory' },
-                { type: 'bug', label: 'Bug Node', desc: 'Identified telemetry exceptions with root cause analysis' },
-                { type: 'pattern', label: 'Pattern Node', desc: 'Design systems or recurrent architectural blocks' },
-                { type: 'context', label: 'Context Node', desc: 'Environment variables or diagnostic metadata' },
-                { type: 'file', label: 'File Node', desc: 'Reference text or config schema details' },
-                { type: 'note', label: 'Note Node', desc: 'General engineering annotation and memory capture' }
-              ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
-              .map(node => (
-                <button
-                  key={node.type}
-                  onClick={() => handleAddNodeType(node.type, 'dream_maker', node.label)}
-                  className="w-full text-left p-2.5 bg-[#141624]/40 hover:bg-[#1f2235]/40 border border-[#1f2235]/30 rounded transition-all text-[11px] group"
-                >
-                  <div className="font-extrabold text-[#e8eaf6] group-hover:text-[#b8ff57] flex items-center gap-1.5">
-                    <Database className="w-3.5 h-3.5 text-[#b8ff57]" />
-                    <span>{node.label}</span>
-                  </div>
-                  <div className="text-[8px] text-[#4a5068] mt-1 leading-relaxed">{node.desc}</div>
-                </button>
-              ))}
-            </div>
+             {/* 5. DreamMakerHub (Memory Core Nodes) */}
+             <div className="space-y-1.5">
+               <h5 className="text-[9px] text-[#b8ff57] uppercase tracking-widest font-bold">// DreamMakerHub</h5>
+               {[
+                 { type: 'decision', label: 'Decision Node', desc: 'Durable architectural decision context memory' },
+                 { type: 'bug', label: 'Bug Node', desc: 'Identified telemetry exceptions with root cause analysis' },
+                 { type: 'pattern', label: 'Pattern Node', desc: 'Design systems or recurrent architectural blocks' },
+                 { type: 'context', label: 'Context Node', desc: 'Environment variables or diagnostic metadata' },
+                 { type: 'file', label: 'File Node', desc: 'Reference text or config schema details' },
+                 { type: 'note', label: 'Note Node', desc: 'General engineering annotation and memory capture' }
+               ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
+               .map(node => (
+                 <button
+                   key={node.type}
+                   onClick={() => handleAddNodeType(node.type, 'dream_maker', node.label)}
+                   className="w-full text-left p-2.5 bg-[#141624]/40 hover:bg-[#1f2235]/40 border border-[#1f2235]/30 rounded transition-all text-[11px] group"
+                 >
+                   <div className="font-extrabold text-[#e8eaf6] group-hover:text-[#b8ff57] flex items-center gap-1.5">
+                     <Database className="w-3.5 h-3.5 text-[#b8ff57]" />
+                     <span>{node.label}</span>
+                   </div>
+                   <div className="text-[8px] text-[#4a5068] mt-1 leading-relaxed">{node.desc}</div>
+                 </button>
+               ))}
+             </div>
+             
+             {/* 6. Storage & State (Redis, Supabase, Buffer) */}
+             <div className="space-y-1.5">
+               <h5 className="text-[9px] text-[#38c8ff] uppercase tracking-widest font-bold">// Storage & State</h5>
+               {[
+                 { type: 'window_buffer', label: 'Window Buffer Memory', desc: 'Short-term conversational windowed memory buffer' },
+                 { type: 'vector_store', label: 'Supabase/Redis Vector Store', desc: 'Persistent high-dimensional vector embeddings storage' },
+               ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
+               .map(node => (
+                 <button
+                   key={node.type}
+                   onClick={() => handleAddNodeType(node.type, 'storage', node.label)}
+                   className="w-full text-left p-2.5 bg-[#141624]/40 hover:bg-[#1f2235]/40 border border-[#1f2235]/30 rounded transition-all text-[11px] group"
+                 >
+                   <div className="font-extrabold text-[#e8eaf6] group-hover:text-[#38c8ff] flex items-center gap-1.5">
+                     <Database className="w-3.5 h-3.5 text-[#38c8ff]" />
+                     <span>{node.label}</span>
+                   </div>
+                   <div className="text-[8px] text-[#4a5068] mt-1 leading-relaxed">{node.desc}</div>
+                 </button>
+               ))}
+             </div>
+
 
           </div>
         </div>
@@ -3559,7 +3633,8 @@ Respond ONLY in JSON matching this format:
                         value={selectedNode.config.mergeMode || 'array'}
                         onChange={(e) => setSelectedNode({
                           ...selectedNode,
-                          config: { ...selectedNode.config, mergeMode: e.target.value }
+                           config: { ...selectedNode.config, mergeMode: e.target.value as 'array' | 'object' }
+
                         })}
                         className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
                       >
@@ -3581,7 +3656,8 @@ Respond ONLY in JSON matching this format:
                         value={selectedNode.config.splitMode || 'first'}
                         onChange={(e) => setSelectedNode({
                           ...selectedNode,
-                          config: { ...selectedNode.config, splitMode: e.target.value }
+                           config: { ...selectedNode.config, splitMode: e.target.value as 'first' | 'all' }
+
                         })}
                         className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
                       >
@@ -3948,6 +4024,19 @@ Respond ONLY in JSON matching this format:
         </div>
       )}
 
+      {/* Right-side execution notifications */}
+      {rightNotification && (
+        <div className="fixed top-8 right-8 z-[100] animate-in fade-in slide-in-from-right-4 duration-300">
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border shadow-2xl font-mono text-xs ${
+            rightNotification.type === 'success' 
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+              : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+          }`}>
+            {rightNotification.type === 'success' ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+            <span className="font-bold tracking-tight">{rightNotification.message}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

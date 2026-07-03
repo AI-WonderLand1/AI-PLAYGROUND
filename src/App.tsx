@@ -70,7 +70,7 @@ const INITIAL_EVENTS: NexusEvent[] = [
 ];
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'workbench' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings'>('models');
+  const [currentTab, setCurrentTab] = useState<'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'workbench' | 'training' | 'creation' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings'>('models');
   const [modelsCatalogSubView, setModelsCatalogSubView] = useState<'directory' | 'infrastructure'>('directory');
   const [selectedCatalogModelId, setSelectedCatalogModelId] = useState<ModelName>('fugu-ultra');
   const [topSearch, setTopSearch] = useState('');
@@ -358,22 +358,22 @@ export default function App() {
 
         {/* Center/Right: Navigation Links */}
         <nav className="hidden lg:flex items-center gap-1">
-          {[
+          {([
             { id: 'models', label: 'Home', activeOn: ['models'], subView: 'directory', externalUrl: 'https://dreammakerhub.website/homepage' },
-            { id: 'dashboard', label: 'Dashboard', activeOn: [], externalUrl: 'https://dreammakerhub.website/dashboard' },
+            { id: 'dashboard', label: 'Dashboard', activeOn: [] as string[], externalUrl: 'https://dreammakerhub.website/dashboard' },
             { id: 'models', label: 'Models', activeOn: ['models'], subView: 'directory' },
-            { id: 'playground', label: 'Fusion', activeOn: [] },
+            { id: 'playground', label: 'Fusion', activeOn: [] as string[] },
             { id: 'playground', label: 'Chat', activeOn: ['playground'] },
-             { id: 'aiwonder', label: 'AI-Wonder', activeOn: ['aiwonder', 'workbench'] },
+              { id: 'aiwonder', label: 'AI-Wonder', activeOn: ['aiwonder'] },
              { id: 'workbench', label: 'Workbench', activeOn: ['workbench'] },
              { id: 'docs', label: 'Docs', activeOn: ['docs'] },
             { id: 'activity', label: 'Activity', activeOn: ['activity'] },
             { id: 'analytics', label: 'Analytics', activeOn: ['analytics'] },
             { id: 'apikeys', label: 'API Keys', activeOn: ['apikeys'] },
             { id: 'presets', label: 'Presets', activeOn: ['presets'] },
-            { id: 'models', label: 'Providers', activeOn: [], subView: 'infrastructure' },
+            { id: 'models', label: 'Providers', activeOn: [] as string[], subView: 'infrastructure' },
             { id: 'settings', label: 'Settings', activeOn: ['settings'] },
-          ].map((link, idx) => {
+          ] as { id: string; label: string; activeOn: string[]; subView?: string; externalUrl?: string }[]).map((link, idx) => {
             const isActive = 
               (link.label === 'Providers' && currentTab === 'models' && modelsCatalogSubView === 'infrastructure') ||
               (link.label === 'Models' && currentTab === 'models' && modelsCatalogSubView === 'directory') ||
