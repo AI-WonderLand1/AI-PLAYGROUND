@@ -1,117 +1,90 @@
-# AI-Wonder Canvas — n8n Feature Gap Plan
+# AI-Wonder Canvas — Remaining Work
 
-> Goal: Turn the mock workflow editor into a real automation platform with actual
-> execution, real HTTP calls, code nodes, conditional logic, and AI agent support.
+> Items marked DONE are removed. Below are PARTIAL and NOT STARTED items
+> from the original plan, updated to reflect current code state.
+> All work targets `AIWonderCanvas.tsx` unless noted.
 
 ---
 
 ## Phase 1: Real Execution (Foundation)
 
-### [ ] Real HTTP Request node
-- **Files:** `AIWonderCanvas.tsx`, `NodeDetailView.tsx`
-- Add "HTTP Request" node type to the add-panel
-- Config fields: URL, method (GET/POST/PUT/DELETE/PATCH), headers (key/value pairs),
-  body (JSON/text), authentication (none/basic/bearer)
-- On workflow execution, actually perform `fetch()` with the configured parameters
-- Show response status, headers, and body in the node output inspector
-- Handle errors: timeout, network failure, non-2xx status
-- **Effort:** Large (~3hr)
-
-### [ ] Real AI execution (wire to OpenRouter/LLM)
-- **Files:** `AIWonderCanvas.tsx`, `Playground.tsx` (shared types)
-- Replace mock AI agent node with real LLM call via OpenRouter
-- Config fields: model selector, system prompt, temperature, max tokens
-- On execution, call OpenRouter API and display real response
-- Add streaming support for AI agent node output
-- Show token usage and cost per AI node execution
-- **Effort:** Large (~3hr)
-
-### [ ] Code node (JS sandbox)
-- **Files:** `AIWonderCanvas.tsx`
-- Add "Code" node type to the add-panel
-- Config: JavaScript editor (monaco or CodeMirror) with syntax highlighting
-- Pre-defined input/output variables: `$input`, `$output`
-- Execute code in a safe sandbox (iframe + postMessage or `new Function()`)
-- Support basic Node.js-like helpers: `JSON.parse/stringify`, `Math`, `Date`
-- Show console output, errors, and return value in inspector
-- **Effort:** Large (~4hr)
-
-### [ ] Node input/output inspector
-- **Files:** `AIWonderCanvas.tsx`, `NodeDetailView.tsx`
-- Click any node to see the actual data that entered and exited it
-- Three panes: Input JSON, Output JSON, Execution log
-- JSON viewer with collapsible tree (syntax highlighting)
-- Show timestamps, duration, and status for each execution
-- Allow re-running a single node without running the full workflow
-- **Effort:** Medium (~2hr)
+### [~] Node input/output inspector — PARTIAL
+- **Done:** NDV overlay opens on double-click (3-column layout), Output pane shows
+  status/output/tokens/duration/timestamp, "Execute Single Node Test" button exists,
+  bottom drawer has step output + execution trace tabs.
+- **Remaining:**
+  - Input pane shows editable `mockInputs`, not the actual data that entered the node
+    during a real run — wire it to real execution input
+  - Add execution log as a THIRD pane inside the NDV (currently in separate bottom drawer)
+  - JSON viewer is plain `<pre>{JSON.stringify(...)}</pre>` — make it a collapsible tree
+    with syntax highlighting
+  - Re-run single node is gated to AI nodes only (line ~2939) — extend to HTTP, Code,
+    IF, and all other executable node types
+  - Show timestamps, duration, and status for each execution inside the NDV
+- **Effort:** Medium (~1.5hr remaining)
 
 ---
 
 ## Phase 2: Flow Control
 
-### [ ] Conditional branching (IF/Switch)
-- **Files:** `AIWonderCanvas.tsx`
-- Add "IF" node type with condition builder
-- Support comparisons: equals, not equals, greater than, less than, contains,
-  starts with, regex match
-- Compare against: static value, another node's output, expression
-- Two output branches: "True" and "False"
-- Add "Switch" node for multi-way branching (multiple cases + default)
-- Render multiple outputs on the canvas as separate pin connections
-- **Effort:** Large (~3hr)
+### [~] Conditional branching (IF/Switch) — PARTIAL
+- **Done:** IF node fully works — operators (equals/not_equals/greater_than/less_than/
+  contains/starts_with/regex), true/false output branches, port routing, visual
+  T✔/F✘ labels, expression-resolved comparisons.
+- **Remaining:**
+  - Switch node is a UI stub only (add-panel line ~2218) — NO execution logic
+  - Implement Switch execution: multiple cases + default, multi-output pins
+  - Add Switch config UI (cases list with values, default branch)
+  - Render multiple outputs on the canvas as separate pin connections
+- **Effort:** Medium (~1.5hr remaining)
 
-### [ ] Error handling + retry logic
-- **Files:** `AIWonderCanvas.tsx`
-- Add error state to node execution: success / warning / error
-- Per-node retry config: max retries (0-5), delay between retries (ms)
-- "Continue on error" toggle — workflow proceeds even if node fails
-- Error trigger node: executes a separate error-handling sub-path
-- Show error messages and stack traces in the output inspector
-- **Effort:** Medium (~2hr)
+### [~] Loops (for/while) — PARTIAL
+- **Done:** `loop_for` and `loop_while` node types exist in add-panel, basic execution
+  (loop_for outputs array, loop_while runs while loop capped at max iterations).
+- **Remaining:**
+  - Loop node does NOT iterate downstream nodes per item — it just outputs the array.
+    Need real per-item iteration: run downstream chain once per item
+  - Expose `$index`, `$value`, `$items` inside loop body to downstream nodes
+  - Render loop body nodes as a contained area on the canvas (visual grouping)
+  - loop_for: properly parse `loopItems` from upstream node output, not just config
+- **Effort:** Large (~2.5hr remaining)
 
-### [ ] Loops (for/while)
-- **Files:** `AIWonderCanvas.tsx`
-- Add "Loop" node type
-- Config: iterate over list (from input), or while condition is true
-- Expose `$index`, `$value`, `$items` inside loop body
-- Limit: max iterations (safety cap at 1000)
-- Render loop body nodes as a contained area on the canvas
-- **Effort:** Large (~3hr)
-
-### [ ] Merge / split data nodes
-- **Files:** `AIWonderCanvas.tsx`
-- Add "Merge" node: combine multiple input streams into one
-  - Modes: combine (append arrays), intersect (common items), zip (pair items)
-- Add "Split" node: divide a list into individual items (one output per item)
-- Add "Aggregate" node: combine items back into a list
-- Useful for fan-out/fan-in patterns
-- **Effort:** Medium (~2hr)
+### [~] Merge / split data nodes — PARTIAL
+- **Done:** Merge node (array concat, object assign), Split node (first/all modes).
+- **Remaining:**
+  - Merge: add `text` mode (currently unimplemented in execution), add `intersect` and
+    `zip` modes
+  - Split: implement fan-out — one output stream per item (currently outputs single value)
+  - Add **Aggregate** node type (does not exist at all) — combine items back into a list
+  - Support true fan-out/fan-in patterns across the execution engine
+- **Effort:** Medium (~1.5hr remaining)
 
 ---
 
 ## Phase 3: Integrations & Triggers
 
-### [ ] Real webhook trigger
-- **Files:** `AIWonderCanvas.tsx`, `App.tsx`
+### [ ] Real webhook trigger — NOT STARTED
+- **Files:** `AIWonderCanvas.tsx`, `App.tsx`, `server/index.ts`
+- Webhook node exists in add-panel but URL is hardcoded mock
 - Generate a real unique URL per workflow: `POST /api/webhooks/{workflowId}`
-- Use a simple Express/Node endpoint or serverless function to receive requests
+- Add Express/Node endpoint in `server/index.ts` to receive requests
 - Parse request body, headers, query params and pass as node input
-- Show webhook URL in the trigger node config with copy button
-- Test with curl/Postman directly from the UI
+- Show webhook URL in trigger node config with copy button
+- Add curl/Postman test button in the UI
 - **Effort:** Large (~4hr, depends on backend)
 
-### [ ] Scheduled / cron triggers
-- **Files:** `AIWonderCanvas.tsx`
-- Add "Schedule" trigger node type
-- Config: interval (every X minutes/hours/days) or cron expression
-- Use `setInterval` or `cron-parser` in browser (or lightweight backend)
-- Show next 5 execution times in the config panel
-- Enable/disable schedule toggle
-- **Effort:** Medium (~2hr)
+### [~] Scheduled / cron triggers — PARTIAL
+- **Done:** Schedule node works via real `setInterval` (9 interval options, enable/disable
+  toggle, "next 5 execution times" preview).
+- **Remaining:**
+  - Cron node is cosmetic — `cronExpression` config field exists but is NOT parsed
+  - Add `cron-parser` dependency and real cron execution in the `useEffect` interval logic
+  - Currently falls back to hardcoded 15-min interval for cron nodes (line ~1018)
+- **Effort:** Small (~1hr remaining)
 
-### [ ] Credentials vault
-- **Files:** `new src/components/CredentialsVault.tsx`, `AIWonderCanvas.tsx`
-- Tab in the left sidebar for managing credentials
+### [ ] Credentials vault — NOT STARTED
+- **Files:** new `src/components/CredentialsVault.tsx`, `AIWonderCanvas.tsx`
+- "Credentials" sidebar tab exists but renders placeholder text only
 - Credential types: API Key (bearer), Basic Auth (username/password),
   OAuth2 (client ID + secret)
 - Store encrypted in localStorage (at minimum base64 encoded)
@@ -119,33 +92,30 @@
 - Never expose credential values in the output inspector
 - **Effort:** Medium (~2hr)
 
-### [ ] Workflow templates (5–10 starter templates)
-- **Files:** `new src/data/workflowTemplates.ts`, `AIWonderCanvas.tsx`
-- Create pre-built workflow templates:
-  1. Webhook → Log to console (hello world)
-  2. Schedule → HTTP GET → Email summary
-  3. Webhook → AI analyze → Conditional route
-  4. Webhook → Code transform → HTTP POST response
-  5. Schedule → AI summarize → Post to webhook
-- Add "Import Template" button in the workflows sidebar
-- Show template gallery with name, description, node count
-- **Effort:** Small (~1hr)
+### [ ] Workflow templates enhancement — NOT STARTED (optional)
+- **Done:** 8 templates exist, gallery + import working.
+- **Remaining (polish):**
+  - Add "Import Template" button inside the workflows sidebar (currently in dedicated
+    Templates tab — minor deviation)
+  - Add template categories/tags for filtering
+- **Effort:** Small (~0.5hr, optional)
 
 ---
 
 ## Phase 4: Advanced AI & Production
 
-### [ ] Multi-agent orchestration
+### [ ] Multi-agent orchestration — NOT STARTED
 - **Files:** `AIWonderCanvas.tsx`, `types.ts`
-- Multiple AI agent nodes can communicate via connections
+- Multiple agent nodes can be wired via ordinary connections, but no handoff semantics
 - Add "Agent Handoff" node: passes conversation context to another agent
 - Add "Tool" node types that AI agents can invoke:
   - HTTP Request tool, Code tool, Knowledge Search tool
 - AI agent config: list of available tools, max iterations, memory type
-- Show agent reasoning trace in the output inspector (thought/action/observation)
+- Show agent reasoning trace in output inspector (thought/action/observation)
+- Move `WorkflowNode`/`WorkflowConnection` types into `types.ts` for shared use
 - **Effort:** Very Large (~6hr)
 
-### [ ] Human-in-the-loop approvals
+### [ ] Human-in-the-loop approvals — NOT STARTED
 - **Files:** `AIWonderCanvas.tsx`
 - Add "Approval" node type
 - Pauses execution and sends notification (in-app toast/notification)
@@ -154,34 +124,37 @@
 - Show pending approvals count in the sidebar
 - **Effort:** Medium (~2hr)
 
-### [ ] Expressions / templating engine
-- **Files:** `AIWonderCanvas.tsx`, `expressionParser.ts`
-- Support expressions in any node config field: `{{ $node["HTTP"].data }}`
-- Expression functions: `$json`, `$items`, `$index`, `$now`, `$today`, `$jmespath`
-- Auto-suggest / autocomplete expression editor
-- Parse expressions at runtime and substitute actual values
-- Show expression evaluation result in the config UI (preview)
-- **Effort:** Large (~4hr)
+### [~] Expressions / templating engine — PARTIAL
+- **Done:** `{{ ... }}` substitution, `resolveConfig` recursively resolves all string
+  values at runtime, functions: `$now`, `$today`, `$json`, `$items`, `$index`,
+  `$node["Name"].data.property` references, expression preview in NDV config UI.
+- **Remaining:**
+  - Add `$jmespath` function (not implemented)
+  - Add auto-suggest/autocomplete expression editor (currently plain inputs/textareas)
+  - Show expression evaluation result preview inline in more config fields
+- **Effort:** Medium (~2hr remaining)
 
-### [ ] Sub-workflows
+### [ ] Sub-workflows — NOT STARTED
 - **Files:** `AIWonderCanvas.tsx`, `App.tsx`
 - Allow a node to reference and call another saved workflow
 - Pass input data and receive output data from the sub-workflow
 - Show sub-workflow as a nested container or referenced node
 - Track nested execution in the log trace
+- Requires workflow persistence (see versioning below)
 - **Effort:** Large (~4hr)
 
-### [ ] Workflow versioning
+### [ ] Workflow versioning — NOT STARTED
 - **Files:** `AIWonderCanvas.tsx`
-- Save workflow snapshots on each "Save"
+- SAVE button currently does nothing except `showNotification('Workflow saved locally!')`
+- Save workflow snapshots on each "Save" (to localStorage or backend)
 - Show version history panel with timestamps
 - Allow diff between versions (nodes added/removed, config changes)
 - Restore to a previous version
 - Auto-save draft every 30 seconds
 - **Effort:** Medium (~2hr)
 
-### [ ] AI-powered workflow generation
-- **Files:** `new src/components/WorkflowGenerator.tsx`
+### [ ] AI-powered workflow generation — NOT STARTED
+- **Files:** new `src/components/WorkflowGenerator.tsx`
 - Text input: "Describe the workflow you want to build"
 - Send description to Gemini/OpenRouter with a system prompt that generates
   a JSON workflow definition
@@ -189,3 +162,29 @@
 - User can then tweak, rearrange, and refine
 - Start with simple patterns: webhook → AI → response
 - **Effort:** Large (~4hr)
+
+---
+
+## Summary
+
+| Status | Count | Items |
+|--------|-------|-------|
+| Partial | 7 | Inspector, IF/Switch, Loops, Merge/Split, Cron, Expressions, Templates |
+| Not started | 7 | Webhook, Credentials, Multi-agent, Approvals, Sub-workflows, Versioning, Workflow gen |
+| **Total remaining** | **14** | |
+
+## Recommended Priority Order
+1. **Workflow versioning** — makes SAVE functional, foundation for sub-workflows (~2hr)
+2. **Switch node execution** — finishes existing stub, small (~1.5hr)
+3. **Cron parsing** — finishes existing stub, small (~1hr)
+4. **Node inspector** — high UX value, medium (~1.5hr)
+5. **Loops** — core flow control, large (~2.5hr)
+6. **Merge/Split/Aggregate** — completes data flow, medium (~1.5hr)
+7. **Credentials vault** — needed for real HTTP auth (~2hr)
+8. **Real webhook trigger** — requires backend (~4hr)
+9. **Expressions polish** — jmespath + autocomplete (~2hr)
+10. **Multi-agent orchestration** — largest effort (~6hr)
+11. **Human-in-the-loop** — (~2hr)
+12. **Sub-workflows** — depends on versioning (~4hr)
+13. **AI workflow generation** — (~4hr)
+14. **Templates polish** — optional (~0.5hr)

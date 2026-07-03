@@ -7,7 +7,7 @@ import {
   GitBranch, Filter, Split, MessageSquare, BookOpen, Download, 
   RefreshCw, ChevronDown, ChevronUp, ChevronRight, Link, HelpCircle as HelpIcon,
   Copy, ExternalLink, Activity, ArrowRight, BarChart2, Briefcase, 
-  Key, Sliders, Upload, Network, Eye
+  Key, Sliders, Upload, Network, Eye, History, RotateCcw
 } from 'lucide-react';
 import { MemoryNode, NexusEvent, ModelName } from '../types';
 import { cn, getOpenRouterModel } from '../utils';
@@ -15,6 +15,7 @@ import { CATALOG_MODELS } from './ModelsCatalog';
 import { GoogleGenAI } from '@google/genai';
 import { WORKFLOW_TEMPLATES, WorkflowTemplate } from '../data/workflowTemplates';
 import { resolveExpressions, resolveConfig, ExpressionContext } from '../utils/expressionParser';
+import { parseExpression } from 'cron-parser';
 
 // Types for workflow node graph
 export interface WorkflowNode {
@@ -46,6 +47,8 @@ export interface WorkflowNode {
     conditionOperator?: 'equals' | 'not_equals' | 'greater_than' | 'less_than' | 'contains' | 'starts_with' | 'regex';
     conditionLeft?: string;
     conditionRight?: string;
+    switchCases?: { value: string; label: string }[];
+    switchOperator?: 'equals' | 'not_equals' | 'greater_than' | 'less_than' | 'contains' | 'starts_with' | 'regex';
     retryCount?: number;
     retryDelay?: number;
     continueOnError?: boolean;
@@ -62,8 +65,21 @@ export interface WorkflowConnection {
   fromId: string;
   toId: string;
   isTrainingEdge?: boolean;
-  fromPort?: 'true' | 'false';
+  fromPort?: string;
 }
+
+interface WorkflowVersion {
+  id: string;
+  title: string;
+  timestamp: number;
+  nodes: WorkflowNode[];
+  connections: WorkflowConnection[];
+  isActive: boolean;
+  label: string;
+}
+
+const WORKFLOW_STORAGE_KEY = 'aiwonder_workflow_versions';
+const MAX_VERSIONS = 50;
 
 interface AIWonderCanvasProps {
   memories: MemoryNode[];
@@ -91,6 +107,31 @@ const scheduleIntervalToMs = (interval: string): number => {
     'every_day': 24 * 60 * 60 * 1000,
   };
   return map[interval] || 15 * 60 * 1000;
+};
+
+// Helper: compute next N execution times from a cron expression
+const getCronNextTimes = (expr: string, count: number): Date[] => {
+  try {
+    const interval = parseExpression(expr, { tz: undefined });
+    const times: Date[] = [];
+    for (let i = 0; i < count; i++) {
+      times.push(interval.next().toDate());
+    }
+    return times;
+  } catch {
+    return [];
+  }
+};
+
+// Helper: compute ms until next cron execution
+const getCronNextDelay = (expr: string): number | null => {
+  try {
+    const interval = parseExpression(expr, { tz: undefined });
+    const next = interval.next().toDate();
+    return Math.max(1000, next.getTime() - Date.now());
+  } catch {
+    return null;
+  }
 };
 
 const MEMORY_TYPE_COLORS: Record<string, string> = {
@@ -186,20 +227,33 @@ const INITIAL_NODES: WorkflowNode[] = [
     },
     memoryId: 'mem-dec-initial'
   },
-  {
-    id: 'memory-bug-1',
-    type: 'bug',
-    category: 'dream_maker',
-    label: 'Bug: Null Mapping Error',
-    x: 680,
-    y: 280,
-    config: {
-      title: 'TypeError in AppContainer',
-      description: 'Caused by asynchronous state loading delay'
-    },
-    memoryId: 'mem-bug-initial'
-  }
-];
+   {
+// ... (lines 231-242)
+     memoryId: 'mem-bug-initial'
+   },
+   {
+     id: 'split-1',
+     type: 'split',
+     category: 'core',
+     label: 'Data Splitter',
+     x: 400,
+     y: 500,
+     config: {
+       mode: 'all', // 'first' | 'all'
+     },
+   },
+   {
+     id: 'merge-1',
+     type: 'merge',
+     category: 'core',
+     label: 'Data Merger',
+     x: 600,
+     y: 500,
+     config: {
+       mode: 'array', // 'array' | 'object' | 'text'
+     },
+   },
+ ];
 
 const INITIAL_CONNECTIONS: WorkflowConnection[] = [
   { id: 'conn-1', fromId: 'trigger-1', toId: 'ai-agent-1' },
@@ -220,7 +274,7 @@ export function AIWonderCanvas({
   onTabChange
 }: AIWonderCanvasProps) {
   // Navigation sidebar state (dashboard level)
-  const [activeSidebarTab, setActiveSidebarTab] = useState<'workflows' | 'templates' | 'credentials' | 'executions' | 'variables' | 'insights' | 'memory'>('workflows');
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'workflows' | 'templates' | 'credentials' | 'executions' | 'variables' | 'insights' | 'memory' | 'versions'>('workflows');
   
   // Workflow core states
   const [nodes, setNodes] = useState<WorkflowNode[]>(INITIAL_NODES);
@@ -284,14 +338,28 @@ export function AIWonderCanvas({
    // Gemini Diagnostic Fix in Bottom Drawer
    const [aiExplanations, setAiExplanations] = useState<Record<string, { explanation: string; fix: string; loading: boolean }>>({});
 
-  // Memory sidebar states
-  const [memorySearch, setMemorySearch] = useState('');
-  const [memoryFilter, setMemoryFilter] = useState<string>('all');
-  const [memoryDragOver, setMemoryDragOver] = useState(false);
+  // Right-side execution notifications
+  const [rightNotification, setRightNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  // Telemetry enhancement states
-  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
-  const [copiedEventId, setCopiedEventId] = useState<string | null>(null);
+  const showRightNotification = (message: string, type: 'success' | 'error') => {
+    setRightNotification({ message, type });
+    setTimeout(() => setRightNotification(null), 4000);
+  };
+
+   // Memory sidebar states
+   const [memorySearch, setMemorySearch] = useState('');
+   const [memoryFilter, setMemoryFilter] = useState<string>('all');
+   const [memoryDragOver, setMemoryDragOver] = useState(false);
+
+   // Telemetry enhancement states
+   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+   const [copiedEventId, setCopiedEventId] = useState<string | null>(null);
+
+  // Workflow versioning states
+  const [workflowVersions, setWorkflowVersions] = useState<WorkflowVersion[]>([]);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [lastAutoSave, setLastAutoSave] = useState<number | null>(null);
+  const [diffVersionId, setDiffVersionId] = useState<string | null>(null);
 
   // Execution outputs per node
   const [nodeOutputs, setNodeOutputs] = useState<Record<string, {
@@ -433,9 +501,15 @@ export function AIWonderCanvas({
       if (!exists) {
         const fromNode = nodes.find(n => n.id === connectingPin.nodeId);
         const existingFromConns = connections.filter(c => c.fromId === connectingPin.nodeId);
-        const fromPort = fromNode?.type === 'if'
-          ? (existingFromConns.length === 0 ? 'true' as const : 'false' as const)
-          : undefined;
+        let fromPort: string | undefined;
+        if (fromNode?.type === 'if') {
+          fromPort = existingFromConns.length === 0 ? 'true' : 'false';
+        } else if (fromNode?.type === 'switch') {
+          const cases = fromNode.config.switchCases || [];
+          const usedPorts = new Set(existingFromConns.map(c => c.fromPort));
+          const nextCase = cases.find((_, i) => !usedPorts.has(`case_${i}`));
+          fromPort = nextCase ? `case_${cases.indexOf(nextCase)}` : (usedPorts.has('default') ? `case_${cases.length}` : 'default');
+        }
         const newConn: WorkflowConnection = {
           id: `conn-${Math.random().toString(36).substr(2, 9)}`,
           fromId: connectingPin.nodeId,
@@ -540,6 +614,13 @@ export function AIWonderCanvas({
           conditionLeft: '$input',
           conditionRight: 'true',
         } : {}),
+        ...(type === 'switch' ? {
+          switchCases: [
+            { value: 'A', label: 'Case A' },
+            { value: 'B', label: 'Case B' },
+          ],
+          switchOperator: 'equals',
+        } : {}),
         mockInputs: { payload: '{}' },
         mockOutputs: { status: 'success' }
       },
@@ -584,7 +665,7 @@ export function AIWonderCanvas({
       id: `conn-${Math.random().toString(36).substr(2, 9)}`,
       fromId: idMap.get(c.fromId)!,
       toId: idMap.get(c.toId)!,
-      fromPort: c.fromPort as 'true' | 'false' | undefined
+      fromPort: c.fromPort
     }));
     setNodes(prev => [...prev, ...newNodes]);
     setConnections(prev => [...prev, ...newConns]);
@@ -760,6 +841,120 @@ export function AIWonderCanvas({
     setCopiedEventId(ev.id);
     setTimeout(() => setCopiedEventId(null), 2000);
   };
+
+  // ─── Workflow Versioning ───
+
+  const loadVersionsFromStorage = (): WorkflowVersion[] => {
+    try {
+      const raw = localStorage.getItem(WORKFLOW_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((v: any) => v && v.id && v.nodes && v.connections);
+    } catch {
+      return [];
+    }
+  };
+
+  const persistVersions = (versions: WorkflowVersion[]) => {
+    try {
+      localStorage.setItem(WORKFLOW_STORAGE_KEY, JSON.stringify(versions));
+    } catch (err) {
+      console.error('Failed to persist workflow versions:', err);
+    }
+  };
+
+  const handleSaveVersion = (autoLabel?: string) => {
+    const version: WorkflowVersion = {
+      id: `ver-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      title: workflowTitle,
+      timestamp: Date.now(),
+      nodes: JSON.parse(JSON.stringify(nodes)),
+      connections: JSON.parse(JSON.stringify(connections)),
+      isActive,
+      label: autoLabel || `v${workflowVersions.length + 1}`,
+    };
+
+    const updated = [version, ...workflowVersions].slice(0, MAX_VERSIONS);
+    setWorkflowVersions(updated);
+    persistVersions(updated);
+    setSelectedVersionId(version.id);
+    showNotification(`Workflow saved as ${version.label}`);
+    return version.id;
+  };
+
+  const handleRestoreVersion = (versionId: string) => {
+    const version = workflowVersions.find(v => v.id === versionId);
+    if (!version) {
+      showNotification('Version not found');
+      return;
+    }
+
+    setNodes(JSON.parse(JSON.stringify(version.nodes)));
+    setConnections(JSON.parse(JSON.stringify(version.connections)));
+    setWorkflowTitle(version.title);
+    setIsActive(version.isActive);
+    setSelectedNode(null);
+    setNodeOutputs({});
+    showNotification(`Restored ${version.label} — ${new Date(version.timestamp).toLocaleTimeString()}`);
+  };
+
+  const handleDeleteVersion = (versionId: string) => {
+    const updated = workflowVersions.filter(v => v.id !== versionId);
+    setWorkflowVersions(updated);
+    persistVersions(updated);
+    if (selectedVersionId === versionId) setSelectedVersionId(null);
+    if (diffVersionId === versionId) setDiffVersionId(null);
+    showNotification('Version deleted');
+  };
+
+  // Load versions from localStorage on mount
+  useEffect(() => {
+    const loaded = loadVersionsFromStorage();
+    if (loaded.length > 0) {
+      setWorkflowVersions(loaded);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-save draft every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const id = handleSaveVersion('auto-save');
+      setLastAutoSave(Date.now());
+      void id;
+    }, 30000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes, connections, workflowTitle, isActive, workflowVersions]);
+
+  // Compute diff between current workflow and a selected version
+  const computeVersionDiff = (versionId: string | null): { added: string[]; removed: string[]; changed: string[] } => {
+    if (!versionId) return { added: [], removed: [], changed: [] };
+    const version = workflowVersions.find(v => v.id === versionId);
+    if (!version) return { added: [], removed: [], changed: [] };
+
+    const currentNodeIds = new Set(nodes.map(n => n.id));
+    const versionNodeIds = new Set(version.nodes.map(n => n.id));
+
+    const added = nodes.filter(n => !versionNodeIds.has(n.id)).map(n => n.label);
+    const removed = version.nodes.filter(n => !currentNodeIds.has(n.id)).map(n => n.label);
+
+    const changed: string[] = [];
+    version.nodes.forEach(vn => {
+      const current = nodes.find(n => n.id === vn.id);
+      if (current && JSON.stringify(current.config) !== JSON.stringify(vn.config)) {
+        changed.push(vn.label);
+      }
+    });
+
+    return { added, removed, changed };
+  };
+
+  const versionDiff = computeVersionDiff(diffVersionId);
+
+  // ─── End Workflow Versioning ───
+
   const handleSaveNdvConfig = (updatedNode: WorkflowNode) => {
     setNodes(prev => prev.map(n => n.id === updatedNode.id ? updatedNode : n));
     setSelectedNode(null);
@@ -908,6 +1103,40 @@ export function AIWonderCanvas({
               [nodeId]: { status: 'success', output: JSON.stringify({ branch, condition: `${leftVal} ${op} ${right} = ${result}` }), timestamp: Date.now(), duration: Date.now() - nodeStart }
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔀 ${node.label} → ${branch === 'true' ? 'True' : 'False'} (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'switch') {
+            const cases = cfg.switchCases || [];
+            const op = cfg.switchOperator || 'equals';
+            const inputVal = input;
+            let matchedPort = 'default';
+
+            const evalCase = (leftVal: string, rightVal: string): boolean => {
+              try {
+                switch (op) {
+                  case 'equals': return leftVal === rightVal;
+                  case 'not_equals': return leftVal !== rightVal;
+                  case 'greater_than': return parseFloat(leftVal) > parseFloat(rightVal);
+                  case 'less_than': return parseFloat(leftVal) < parseFloat(rightVal);
+                  case 'contains': return leftVal.includes(rightVal);
+                  case 'starts_with': return leftVal.startsWith(rightVal);
+                  case 'regex': return new RegExp(rightVal).test(leftVal);
+                  default: return false;
+                }
+              } catch { return false; }
+            };
+
+            for (let i = 0; i < cases.length; i++) {
+              if (evalCase(inputVal, cases[i].value)) {
+                matchedPort = `case_${i}`;
+                break;
+              }
+            }
+
+            const matchedLabel = matchedPort === 'default' ? 'default' : cases[parseInt(matchedPort.split('_')[1])]?.label || matchedPort;
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: 'success', output: JSON.stringify({ branch: matchedPort, matched: matchedLabel, input: inputVal, operator: op }), timestamp: Date.now(), duration: Date.now() - nodeStart }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔀 ${node.label} → ${matchedLabel} (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'code') {
             const code = cfg.code;
             if (!code) throw new Error('Code node has no JavaScript to execute');
@@ -1045,11 +1274,11 @@ export function AIWonderCanvas({
         throw lastError || new Error(`Node "${node.label}" failed`);
       }
 
-      // Propagate output to downstream nodes (respect port routing for IF nodes)
+      // Propagate output to downstream nodes (respect port routing for IF/Switch nodes)
       const downstream = connections.filter(c => c.fromId === nodeId);
       for (const conn of downstream) {
-        // For IF nodes, only follow connections matching the branch
-        if (node.type === 'if' && conn.fromPort) {
+        // For IF/Switch nodes, only follow connections matching the evaluated branch
+        if ((node.type === 'if' || node.type === 'switch') && conn.fromPort) {
           const branchOutput = nodeOutputs[nodeId]?.output;
           let branchMatch = false;
           if (branchOutput) {
@@ -1087,7 +1316,7 @@ export function AIWonderCanvas({
   useEffect(() => {
     const relevant = nodes.filter(n => n.type === 'schedule' || n.type === 'cron');
     const scheduleKey = relevant.map(n =>
-      `${n.id}:${n.config.scheduleInterval}:${String(n.config.scheduleEnabled !== false)}`
+      `${n.id}:${n.type === 'cron' ? (n.config.cronExpression || '') : n.config.scheduleInterval}:${String(n.config.scheduleEnabled !== false)}`
     ).join('|');
     if (scheduleKey === prevScheduleKeyRef.current) return;
     prevScheduleKeyRef.current = scheduleKey;
@@ -1096,15 +1325,32 @@ export function AIWonderCanvas({
     scheduleTimersRef.current.clear();
     for (const node of relevant) {
       if (node.config.scheduleEnabled === false) continue;
-      const interval = node.type === 'schedule'
-        ? scheduleIntervalToMs(node.config.scheduleInterval || 'every_15_min')
-        : 15 * 60 * 1000;
+
+      let interval: number;
+      let intervalLabel: string;
+
+      if (node.type === 'schedule') {
+        interval = scheduleIntervalToMs(node.config.scheduleInterval || 'every_15_min');
+        intervalLabel = `every ${Math.round(interval / 1000 / 60)}min`;
+      } else {
+        // Cron node — parse the real cron expression
+        const expr = node.config.cronExpression || '*/15 * * * *';
+        const delay = getCronNextDelay(expr);
+        if (delay === null) {
+          setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⚠️ Cron parse failed for ${node.label}: "${expr}" — invalid expression`]);
+          continue;
+        }
+        interval = delay;
+        const nextTimes = getCronNextTimes(expr, 1);
+        intervalLabel = nextTimes.length > 0 ? `next: ${nextTimes[0].toLocaleTimeString()}` : 'cron active';
+      }
+
       const timer = setInterval(() => {
-        setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏰ Schedule triggered: ${node.label}`]);
+        setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏰ ${node.type === 'cron' ? 'Cron' : 'Schedule'} triggered: ${node.label}`]);
         executeWorkflowRef.current();
       }, interval);
       scheduleTimersRef.current.set(node.id, timer);
-      setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏰ Schedule active: ${node.label} (every ${Math.round(interval/1000/60)}min)`]);
+      setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏰ ${node.type === 'cron' ? 'Cron' : 'Schedule'} active: ${node.label} (${intervalLabel})`]);
     }
     return () => {
       for (const timer of scheduleTimersRef.current.values()) clearInterval(timer);
@@ -1217,6 +1463,7 @@ Respond ONLY in JSON matching this format:
             { id: 'memory', label: 'Memory Core', icon: Network },
             { id: 'credentials', label: 'Credentials', icon: Key },
             { id: 'executions', label: 'Executions', icon: Clock },
+            { id: 'versions', label: 'Versions', icon: History },
             { id: 'variables', label: 'Variables', icon: Sliders },
             { id: 'insights', label: 'Insights', icon: BarChart2 }
           ].map(tab => {
@@ -1243,6 +1490,9 @@ Respond ONLY in JSON matching this format:
                 {tab.id === 'workflows' && (
                   <span className="text-[8px] bg-[#1f2235] text-[#b8ff57] px-1.5 py-0.2 rounded font-bold border border-[#b8ff57]/20">1</span>
                 )}
+                {tab.id === 'versions' && workflowVersions.length > 0 && (
+                  <span className="text-[8px] bg-[#1f2235] text-[#5b5eff] px-1.5 py-0.2 rounded font-bold border border-[#5b5eff]/20">{workflowVersions.length}</span>
+                )}
               </button>
             );
           })}
@@ -1262,6 +1512,16 @@ Respond ONLY in JSON matching this format:
             <span>Swarms Engaged:</span>
             <span className="text-emerald-500 font-bold">ACTIVE</span>
           </div>
+          <div className="flex justify-between">
+            <span>Versions:</span>
+            <span className="text-[#5b5eff] font-bold">{workflowVersions.length}</span>
+          </div>
+          {lastAutoSave && (
+            <div className="flex justify-between">
+              <span>Auto-save:</span>
+              <span className="text-[#4c5475]">{new Date(lastAutoSave).toLocaleTimeString()}</span>
+            </div>
+          )}
         </div>
       </aside>
 
@@ -1437,6 +1697,150 @@ Respond ONLY in JSON matching this format:
               </div>
             </div>
           )}
+          {/* Versions panel */}
+          {activeSidebarTab === 'versions' && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Header */}
+              <div className="p-4 border-b border-[#1f2235]/40 bg-[#0a0b12] shrink-0">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <History className="w-3.5 h-3.5 text-[#5b5eff]" />
+                    <h3 className="text-[10px] text-[#5b5eff] uppercase tracking-widest font-bold">// Version History</h3>
+                  </div>
+                  <span className="text-[8px] font-mono text-[#5b5eff]">{workflowVersions.length} saved</span>
+                </div>
+                <button
+                  onClick={() => handleSaveVersion()}
+                  className="w-full flex items-center justify-center gap-2 px-2 py-1.5 bg-[#5b5eff]/10 border border-[#5b5eff]/30 text-[#5b5eff] hover:bg-[#5b5eff]/20 transition-all rounded-sm text-[8px] font-mono uppercase tracking-wider"
+                >
+                  <Save className="w-3 h-3" />
+                  <span>Save Snapshot Now</span>
+                </button>
+                {lastAutoSave && (
+                  <div className="mt-2 text-[7px] text-[#4c5475] font-mono text-center">
+                    Last auto-save: {new Date(lastAutoSave).toLocaleTimeString()}
+                  </div>
+                )}
+              </div>
+
+              {/* Diff view */}
+              {diffVersionId && versionDiff && (
+                <div className="p-3 border-b border-[#1f2235]/40 bg-[#0c0e17] shrink-0 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[8px] text-[#b8ff57] uppercase tracking-wider font-bold">Diff vs Current</span>
+                    <button onClick={() => setDiffVersionId(null)} className="text-[#4c5475] hover:text-white">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                  {versionDiff.added.length > 0 && (
+                    <div className="space-y-0.5">
+                      <span className="text-[7px] text-emerald-400 font-mono">+ Added ({versionDiff.added.length})</span>
+                      {versionDiff.added.map((label, i) => (
+                        <div key={i} className="text-[8px] text-emerald-400/70 font-mono pl-2 truncate">+ {label}</div>
+                      ))}
+                    </div>
+                  )}
+                  {versionDiff.removed.length > 0 && (
+                    <div className="space-y-0.5">
+                      <span className="text-[7px] text-red-400 font-mono">- Removed ({versionDiff.removed.length})</span>
+                      {versionDiff.removed.map((label, i) => (
+                        <div key={i} className="text-[8px] text-red-400/70 font-mono pl-2 truncate">- {label}</div>
+                      ))}
+                    </div>
+                  )}
+                  {versionDiff.changed.length > 0 && (
+                    <div className="space-y-0.5">
+                      <span className="text-[7px] text-yellow-400 font-mono">~ Changed ({versionDiff.changed.length})</span>
+                      {versionDiff.changed.map((label, i) => (
+                        <div key={i} className="text-[8px] text-yellow-400/70 font-mono pl-2 truncate">~ {label}</div>
+                      ))}
+                    </div>
+                  )}
+                  {versionDiff.added.length === 0 && versionDiff.removed.length === 0 && versionDiff.changed.length === 0 && (
+                    <div className="text-[8px] text-[#4c5475] font-mono">No differences detected.</div>
+                  )}
+                </div>
+              )}
+
+              {/* Version list */}
+              <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-1.5">
+                {workflowVersions.length === 0 && (
+                  <div className="text-center py-8 font-mono text-[8px] text-[#4c5475] tracking-widest">
+                    NO VERSIONS SAVED YET<br />
+                    <span className="text-[#5b5eff]/50">Click SAVE or "Save Snapshot" to create one</span>
+                  </div>
+                )}
+                {workflowVersions.map((v, idx) => {
+                  const isLatest = idx === 0;
+                  const isSelected = selectedVersionId === v.id;
+                  const isDiffing = diffVersionId === v.id;
+                  return (
+                    <div
+                      key={v.id}
+                      className={cn(
+                        "border rounded-sm transition-all",
+                        isSelected ? "bg-[#1c1f32] border-[#5b5eff]" : "bg-[#0c0d12] border-[#1f2235]/40 hover:border-[#333]"
+                      )}
+                    >
+                      <div className="p-2.5">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className={cn(
+                              "text-[8px] font-mono font-bold px-1.5 py-0.5 rounded",
+                              v.label === 'auto-save' ? "bg-[#4c5475]/20 text-[#4c5475]" : "bg-[#5b5eff]/20 text-[#5b5eff]"
+                            )}>
+                              {v.label}
+                            </span>
+                            {isLatest && (
+                              <span className="text-[7px] text-[#b8ff57] font-mono uppercase">LATEST</span>
+                            )}
+                          </div>
+                          <span className="text-[7px] text-[#4c5475] font-mono">
+                            {new Date(v.timestamp).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="text-[9px] text-slate-300 font-mono truncate mb-1">{v.title}</div>
+                        <div className="flex items-center gap-2 text-[7px] text-[#4c5475] font-mono">
+                          <span>{v.nodes.length} nodes</span>
+                          <span>{v.connections.length} edges</span>
+                          <span className={v.isActive ? "text-emerald-400" : "text-[#4c5475]"}>{v.isActive ? 'ACTIVE' : 'INACTIVE'}</span>
+                        </div>
+                      </div>
+                      <div className="flex border-t border-[#1f2235]/30 divide-x divide-[#1f2235]/30">
+                        <button
+                          onClick={() => {
+                            setSelectedVersionId(v.id);
+                            handleRestoreVersion(v.id);
+                          }}
+                          className="flex-1 py-1.5 text-[7px] font-mono uppercase text-[#b8ff57] hover:bg-[#b8ff57]/10 transition-colors flex items-center justify-center gap-1"
+                        >
+                          <RotateCcw className="w-2.5 h-2.5" />
+                          <span>Restore</span>
+                        </button>
+                        <button
+                          onClick={() => setDiffVersionId(isDiffing ? null : v.id)}
+                          className={cn(
+                            "flex-1 py-1.5 text-[7px] font-mono uppercase transition-colors flex items-center justify-center gap-1",
+                            isDiffing ? "text-[#5b5eff] bg-[#5b5eff]/10" : "text-[#808eb5] hover:bg-[#5b5eff]/10 hover:text-[#5b5eff]"
+                          )}
+                        >
+                          <GitBranch className="w-2.5 h-2.5" />
+                          <span>Diff</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteVersion(v.id)}
+                          className="flex-1 py-1.5 text-[7px] font-mono uppercase text-[#4c5475] hover:text-red-500 hover:bg-red-500/10 transition-colors flex items-center justify-center gap-1"
+                        >
+                          <Trash2 className="w-2.5 h-2.5" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {/* Variables panel */}
           {activeSidebarTab === 'variables' && (
             <div className="flex-1 overflow-y-auto p-4">
@@ -1548,7 +1952,7 @@ Respond ONLY in JSON matching this format:
 
                 {/* Save Button */}
                 <button
-                  onClick={() => showNotification('Workflow saved locally!')}
+                  onClick={() => handleSaveVersion()}
                   className="bg-[#141624] hover:bg-[#1c1f32] border border-[#1f2235] text-[#e8eaf6] px-3 py-1.5 rounded-sm text-[10px] font-bold uppercase transition-all flex items-center gap-1.5"
                 >
                   <Save className="w-3 h-3" />
@@ -1667,29 +2071,43 @@ Respond ONLY in JSON matching this format:
 
                     return (
                       <g key={conn.id}>
-                        {/* Connection Shadow Glow */}
-                        <path
-                          d={pathString}
-                          fill="none"
-                          stroke={conn.isTrainingEdge ? '#10b981' : '#5b5eff'}
-                          strokeWidth={conn.isTrainingEdge ? "6" : "5"}
-                          className="opacity-20"
-                        />
-                        {/* Interactive Connection Core Line */}
-                        <path
-                          d={pathString}
-                          fill="none"
-                          stroke={conn.isTrainingEdge ? '#10b981' : (fromNode.category === 'dream_maker' ? '#b8ff57' : '#5b5eff')}
-                          strokeWidth={conn.isTrainingEdge ? "3" : "2"}
-                          strokeDasharray={conn.isTrainingEdge ? "5 5" : (connectingPin ? "4 2" : "none")}
-                          className="transition-all hover:stroke-red-500 hover:stroke-[3px] pointer-events-auto cursor-pointer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConnections(prev => prev.filter(c => c.id !== conn.id));
-                            showNotification('Connection severed');
-                          }}
-                        />
-                        {/* Flow direction dot */}
+                         // Connection Shadow Glow
+                         <path
+                           d={pathString}
+                           fill="none"
+                           stroke={(() => {
+                             if (conn.isTrainingEdge) return '#10b981';
+                             const status = nodeOutputs[fromNode.id]?.status;
+                             if (status === 'success') return '#00e5a0';
+                             if (status === 'error') return '#ff3d6b';
+                             if (status === 'running') return '#5b5eff';
+                             return fromNode.category === 'dream_maker' ? '#b8ff57' : '#5b5eff';
+                           })()}
+                           strokeWidth={conn.isTrainingEdge ? "6" : "5"}
+                           className="opacity-20"
+                         />
+                         {/* Interactive Connection Core Line */}
+                         <path
+                           d={pathString}
+                           fill="none"
+                           stroke={(() => {
+                             if (conn.isTrainingEdge) return '#10b981';
+                             const status = nodeOutputs[fromNode.id]?.status;
+                             if (status === 'success') return '#00e5a0';
+                             if (status === 'error') return '#ff3d6b';
+                             if (status === 'running') return '#5b5eff';
+                             return fromNode.category === 'dream_maker' ? '#b8ff57' : '#5b5eff';
+                           })()}
+                           strokeWidth={conn.isTrainingEdge ? "3" : "2"}
+                           strokeDasharray={conn.isTrainingEdge ? "5 5" : (connectingPin ? "4 2" : "none")}
+                           className="transition-all hover:stroke-red-500 hover:stroke-[3px] pointer-events-auto cursor-pointer"
+                           onClick={(e) => {
+                             e.stopPropagation();
+                             setConnections(prev => prev.filter(c => c.id !== conn.id));
+                             showNotification('Connection severed');
+                           }}
+                         />
+                         {/* Flow direction dot */}
                         <circle
                           cx={(x1 + x2) / 2}
                           cy={(y1 + y2) / 2}
@@ -1700,18 +2118,38 @@ Respond ONLY in JSON matching this format:
                           className="animate-pulse"
                         />
                         {/* Port label for IF/Switch nodes */}
-                        {conn.fromPort && (
-                          <text
-                            x={(x1 + x2) / 2 - 6}
-                            y={(y1 + y2) / 2 - 8}
-                            fill={conn.fromPort === 'true' ? '#00e5a0' : '#ff6b6b'}
-                            fontSize="9"
-                            fontWeight="bold"
-                            fontFamily="monospace"
-                          >
-                            {conn.fromPort === 'true' ? 'T✔' : 'F✘'}
-                          </text>
-                        )}
+                        {conn.fromPort && (() => {
+                          let label = '';
+                          let color = '#00e5a0';
+                          if (fromNode.type === 'if') {
+                            label = conn.fromPort === 'true' ? 'T✔' : 'F✘';
+                            color = conn.fromPort === 'true' ? '#00e5a0' : '#ff6b6b';
+                          } else if (fromNode.type === 'switch') {
+                            if (conn.fromPort === 'default') {
+                              label = 'DEF';
+                              color = '#ffc147';
+                            } else if (conn.fromPort.startsWith('case_')) {
+                              const idx = parseInt(conn.fromPort.split('_')[1]);
+                              const caseData = fromNode.config.switchCases?.[idx];
+                              label = caseData?.label || `C${idx}`;
+                              color = '#5b5eff';
+                            }
+                          } else {
+                            label = conn.fromPort;
+                          }
+                          return (
+                            <text
+                              x={(x1 + x2) / 2 - label.length * 2}
+                              y={(y1 + y2) / 2 - 8}
+                              fill={color}
+                              fontSize="9"
+                              fontWeight="bold"
+                              fontFamily="monospace"
+                            >
+                              {label}
+                            </text>
+                          );
+                        })()}
                       </g>
                     );
                   })}
@@ -1882,19 +2320,36 @@ Respond ONLY in JSON matching this format:
               <span className="text-[#4c5475]">Double-click empty canvas to add nodes // Double-click nodes to edit</span>
             </div>
 
-            {/* Summon "+" FAB Button on canvas */}
-            {(currentTab === 'aiwonder' || currentTab === 'workbench') && (
-              <button
-                onClick={() => {
-                  setSpawnCoords(null);
-                  setIsAddPanelOpen(true);
-                }}
-                className="absolute right-6 bottom-6 w-10 h-10 rounded-full bg-[#5b5eff] hover:bg-[#4b4edd] text-white flex items-center justify-center shadow-[0_0_15px_rgba(91,94,255,0.4)] hover:scale-105 transition-all z-20"
-                title="Summon Node Tray"
-              >
-                <Plus className="w-5 h-5" />
-              </button>
-            )}
+             {/* Summon "+" FAB Button on canvas */}
+             {(currentTab === 'aiwonder' || currentTab === 'workbench') && (
+               <button
+                 onClick={() => {
+                   setSpawnCoords(null);
+                   setIsAddPanelOpen(true);
+                 }}
+                 className="absolute right-6 bottom-6 w-10 h-10 rounded-full bg-[#5b5eff] hover:bg-[#4b4edd] text-white flex items-center justify-center shadow-[0_0_15px_rgba(91,94,255,0.4)] hover:scale-105 transition-all z-20"
+                 title="Summon Node Tray"
+               >
+                 <Plus className="w-5 h-5" />
+               </button>
+             )}
+
+             {/* W+ FAB (N8n Style) */}
+             {(currentTab === 'aiwonder' || currentTab === 'workbench') && (
+<button
+  onClick={() => {
+    setSpawnCoords(null);
+    setIsAddPanelOpen(true);
+  }}
+  className="absolute right-6 top-6 w-12 h-12 rounded-full bg-[#b8ff57] hover:bg-[#a6e64d] text-[#0a0a0a] flex items-center justify-center shadow-[0_0_20px_rgba(184,255,87,0.5)] hover:scale-110 transition-all z-20 group"
+  title="Summon Node Tray"
+>
+  <span className="text-2xl font-bold group-hover:scale-110 transition-transform">W+</span>
+  <div className="absolute -top-10 right-0 bg-[#141624] text-[9px] font-mono px-2 py-1 rounded border border-[#1f2235] opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+    W+ Add Node
+  </div>
+</button>
+             )}
           </div>
 
           {/* WORKBENCH SUB-DRAWER (Unified Train + Create panels) */}
@@ -2900,7 +3355,7 @@ Respond ONLY in JSON matching this format:
                             <span className="text-[#808eb5]">→ {target?.label || conn.toId}</span>
                             <select
                               value={conn.fromPort || 'true'}
-                              onChange={(e) => setConnections(prev => prev.map(c => c.id === conn.id ? { ...c, fromPort: e.target.value as 'true' | 'false' } : c))}
+                              onChange={(e) => setConnections(prev => prev.map(c => c.id === conn.id ? { ...c, fromPort: e.target.value } : c))}
                               className="bg-[#141624] border border-[#1f2235] rounded text-[9px] px-1 py-0.5 text-white"
                             >
                               <option value="true">True</option>
@@ -2911,6 +3366,118 @@ Respond ONLY in JSON matching this format:
                       })}
                       {connections.filter(c => c.fromId === selectedNode.id).length === 0 && (
                         <p className="text-[9px] text-[#4a5068]">Connect this node to others, then assign True/False ports here.</p>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {/* Switch parameters */}
+                {selectedNode.type === 'switch' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#5b5eff] uppercase font-bold">Comparison Operator</label>
+                      <select
+                        value={selectedNode.config.switchOperator || 'equals'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, switchOperator: e.target.value as any }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      >
+                        <option value="equals">Equals (===)</option>
+                        <option value="not_equals">Not Equals (!==)</option>
+                        <option value="greater_than">Greater Than (&gt;)</option>
+                        <option value="less_than">Less Than (&lt;)</option>
+                        <option value="contains">Contains</option>
+                        <option value="starts_with">Starts With</option>
+                        <option value="regex">Regex Match</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[9px] text-[#5b5eff] uppercase font-bold">Cases (compare $input against each value)</label>
+                        <button
+                          onClick={() => {
+                            const cases = selectedNode.config.switchCases || [];
+                            const newCaseNum = cases.length + 1;
+                            setSelectedNode({
+                              ...selectedNode,
+                              config: {
+                                ...selectedNode.config,
+                                switchCases: [...cases, { value: '', label: `Case ${String.fromCharCode(64 + newCaseNum)}` }]
+                              }
+                            });
+                          }}
+                          className="px-2 py-0.5 bg-[#5b5eff]/10 border border-[#5b5eff]/30 text-[#5b5eff] text-[8px] font-mono uppercase hover:bg-[#5b5eff]/20 rounded-sm"
+                        >
+                          + Add Case
+                        </button>
+                      </div>
+                      {(selectedNode.config.switchCases || []).map((sc, idx) => (
+                        <div key={idx} className="flex items-center gap-2 bg-[#141624]/60 border border-[#1f2235]/40 rounded p-2">
+                          <span className="text-[8px] font-mono text-[#5b5eff] font-bold shrink-0">case_{idx}</span>
+                          <input
+                            type="text"
+                            value={sc.label}
+                            onChange={(e) => {
+                              const cases = [...(selectedNode.config.switchCases || [])];
+                              cases[idx] = { ...cases[idx], label: e.target.value };
+                              setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, switchCases: cases } });
+                            }}
+                            className="w-24 bg-[#141624] border border-[#1f2235] rounded text-[10px] px-2 py-1 text-white font-mono"
+                            placeholder="Label"
+                          />
+                          <input
+                            type="text"
+                            value={sc.value}
+                            onChange={(e) => {
+                              const cases = [...(selectedNode.config.switchCases || [])];
+                              cases[idx] = { ...cases[idx], value: e.target.value };
+                              setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, switchCases: cases } });
+                            }}
+                            className="flex-1 bg-[#141624] border border-[#1f2235] rounded text-[10px] px-2 py-1 text-white font-mono"
+                            placeholder="Comparison value"
+                          />
+                          <button
+                            onClick={() => {
+                              const cases = (selectedNode.config.switchCases || []).filter((_, i) => i !== idx);
+                              setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, switchCases: cases } });
+                            }}
+                            className="text-[#4c5475] hover:text-red-500 p-0.5"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                      {(selectedNode.config.switchCases || []).length === 0 && (
+                        <p className="text-[9px] text-[#4a5068]">No cases defined. All inputs will route to "default".</p>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-[#1f2235]/20">
+                      <label className="text-[9px] text-[#5e6686] uppercase font-bold mb-2 block">Outgoing Connections — Port Assignment</label>
+                      {connections.filter(c => c.fromId === selectedNode.id).map(conn => {
+                        const target = nodes.find(n => n.id === conn.toId);
+                        const cases = selectedNode.config.switchCases || [];
+                        return (
+                          <div key={conn.id} className="flex items-center gap-2 mb-1 text-[10px]">
+                            <span className="text-[#808eb5]">→ {target?.label || conn.toId}</span>
+                            <select
+                              value={conn.fromPort || 'default'}
+                              onChange={(e) => setConnections(prev => prev.map(c => c.id === conn.id ? { ...c, fromPort: e.target.value } : c))}
+                              className="bg-[#141624] border border-[#1f2235] rounded text-[9px] px-1 py-0.5 text-white"
+                            >
+                              {cases.map((sc, idx) => (
+                                <option key={idx} value={`case_${idx}`}>{sc.label || `Case ${idx}`}</option>
+                              ))}
+                              <option value="default">Default</option>
+                            </select>
+                          </div>
+                        );
+                      })}
+                      {connections.filter(c => c.fromId === selectedNode.id).length === 0 && (
+                        <p className="text-[9px] text-[#4a5068]">Connect this node to others, then assign case ports here.</p>
                       )}
                     </div>
                   </>
@@ -3097,6 +3664,30 @@ Respond ONLY in JSON matching this format:
                       />
                       <p className="text-[8px] text-[#4a5068]">Standard cron format: minute hour day month weekday</p>
                     </div>
+
+                    {/* Validation + next 5 execution times */}
+                    {(() => {
+                      const expr = selectedNode.config.cronExpression || '*/15 * * * *';
+                      const nextTimes = getCronNextTimes(expr, 5);
+                      if (nextTimes.length === 0) {
+                        return (
+                          <div className="p-2 border border-red-500/30 bg-red-500/5 rounded-sm">
+                            <span className="text-[9px] text-red-400 font-mono">⚠ Invalid cron expression: "{expr}"</span>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="p-2 border border-[#5b5eff]/20 bg-[#5b5eff]/5 rounded-sm space-y-1">
+                          <span className="text-[8px] text-[#5b5eff] font-mono uppercase tracking-wider block">Next 5 Executions</span>
+                          {nextTimes.map((t, i) => (
+                            <div key={i} className="text-[9px] text-[#808eb5] font-mono">
+                              <span className="text-[#5b5eff]">{i + 1}.</span> {t.toLocaleString()}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+
                     <div className="flex items-center gap-2">
                       <span className={`w-2 h-2 rounded-full ${selectedNode.config.scheduleEnabled !== false ? 'bg-emerald-500' : 'bg-[#4a5068]'}`} />
                       <span className="text-[9px] text-[#808eb5]">{selectedNode.config.scheduleEnabled !== false ? 'Active' : 'Paused'}</span>

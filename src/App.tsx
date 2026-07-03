@@ -457,7 +457,7 @@ export default function App() {
         )}
 
         {/* AI-WONDER Canvas Orchestrator View */}
-        {(currentTab === 'aiwonder' || currentTab === 'workbench') && (
+        {(currentTab === 'aiwonder' || currentTab === 'workbench' || currentTab === 'training' || currentTab === 'creation') && (
           <AIWonderCanvas
             memories={memories}
             events={events}
