@@ -7,7 +7,7 @@ import {
   GitBranch, Filter, Split, MessageSquare, BookOpen, Download, 
   RefreshCw, ChevronDown, ChevronUp, ChevronRight, Link, HelpCircle as HelpIcon,
   Copy, ExternalLink, Activity, ArrowRight, BarChart2, Briefcase, 
-  Key, Sliders
+  Key, Sliders, Upload, Network, Eye
 } from 'lucide-react';
 import { MemoryNode, NexusEvent, ModelName } from '../types';
 import { cn, getOpenRouterModel } from '../utils';
@@ -70,6 +70,7 @@ interface AIWonderCanvasProps {
   events: NexusEvent[];
   onAddMemory: (node: Omit<MemoryNode, 'id' | 'ts'> & { id?: string }) => void;
   onDeleteMemory: (id: string) => void;
+  onImportMemories: (imported: MemoryNode[]) => void;
   onClearEvents: () => void;
   onDismissEvent: (id: string) => void;
    currentTab?: 'aiwonder' | 'workbench' | 'training' | 'creation';
@@ -90,6 +91,27 @@ const scheduleIntervalToMs = (interval: string): number => {
     'every_day': 24 * 60 * 60 * 1000,
   };
   return map[interval] || 15 * 60 * 1000;
+};
+
+const MEMORY_TYPE_COLORS: Record<string, string> = {
+  decision: '#b8ff57',
+  bug: '#ff4560',
+  pattern: '#38c8ff',
+  context: '#b04cff',
+  file: '#ffad33',
+  note: '#00e8c6',
+};
+
+const NEXUS_TYPE_LABELS: Record<string, string> = {
+  js_error: 'JS RUNTIME',
+  unhandled_promise: 'REJECTION',
+  network: 'NETWORK FAIL',
+  broken_link: 'BROKEN LINK',
+  missing_asset: 'ASSET FAIL',
+  html_issue: 'HTML/A11Y',
+  css_issue: 'CSS STYLE',
+  react_error: 'REACT ERR',
+  ts_error: 'TS BUILD',
 };
 
 // Default initial nodes
@@ -191,13 +213,14 @@ export function AIWonderCanvas({
   events,
   onAddMemory,
   onDeleteMemory,
+  onImportMemories,
   onClearEvents,
   onDismissEvent,
   currentTab = 'aiwonder',
   onTabChange
 }: AIWonderCanvasProps) {
   // Navigation sidebar state (dashboard level)
-  const [activeSidebarTab, setActiveSidebarTab] = useState<'workflows' | 'templates' | 'credentials' | 'executions' | 'variables' | 'insights'>('workflows');
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'workflows' | 'templates' | 'credentials' | 'executions' | 'variables' | 'insights' | 'memory'>('workflows');
   
   // Workflow core states
   const [nodes, setNodes] = useState<WorkflowNode[]>(INITIAL_NODES);
@@ -260,6 +283,15 @@ export function AIWonderCanvas({
 
    // Gemini Diagnostic Fix in Bottom Drawer
    const [aiExplanations, setAiExplanations] = useState<Record<string, { explanation: string; fix: string; loading: boolean }>>({});
+
+  // Memory sidebar states
+  const [memorySearch, setMemorySearch] = useState('');
+  const [memoryFilter, setMemoryFilter] = useState<string>('all');
+  const [memoryDragOver, setMemoryDragOver] = useState(false);
+
+  // Telemetry enhancement states
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const [copiedEventId, setCopiedEventId] = useState<string | null>(null);
 
   // Execution outputs per node
   const [nodeOutputs, setNodeOutputs] = useState<Record<string, {
@@ -678,7 +710,56 @@ export function AIWonderCanvas({
     showNotification('Memory Node synchronized');
   };
 
-  // Save general parameters from standard NDV overlay
+  // Export memories as JSON knowledge graph
+  const handleExportMemories = () => {
+    const dataStr = JSON.stringify({ project: 'AI Playground Project', memories, exported: new Date().toISOString() }, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `memory-core-${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showNotification('Knowledge graph exported!');
+  };
+
+  // Process dropped/selected files for memory import
+  const processMemoryFiles = (files: FileList) => {
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const textContent = event.target?.result as string;
+        try {
+          const data = JSON.parse(textContent);
+          if (data.memories && Array.isArray(data.memories)) {
+            onImportMemories(data.memories);
+            showNotification(`Imported ${data.memories.length} memory nodes`);
+            return;
+          }
+        } catch {
+          // Fallback to plain text import
+        }
+        const extension = file.name.split('.').pop() || 'txt';
+        const type: MemoryNode['type'] = ['js', 'ts', 'tsx', 'jsx', 'py'].includes(extension) ? 'file' : extension === 'md' ? 'note' : 'file';
+        onAddMemory({ title: file.name, content: `Codebase File: ${file.name}\n\n${textContent}`, type });
+        showNotification(`Imported: ${file.name}`);
+      };
+      reader.readAsText(file);
+    });
+  };
+
+  const handleMemoryDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setMemoryDragOver(false);
+    processMemoryFiles(e.dataTransfer.files);
+  };
+
+  // Copy event JSON to clipboard
+  const handleCopyEvent = (ev: NexusEvent) => {
+    navigator.clipboard.writeText(JSON.stringify(ev, null, 2));
+    setCopiedEventId(ev.id);
+    setTimeout(() => setCopiedEventId(null), 2000);
+  };
   const handleSaveNdvConfig = (updatedNode: WorkflowNode) => {
     setNodes(prev => prev.map(n => n.id === updatedNode.id ? updatedNode : n));
     setSelectedNode(null);
@@ -1133,6 +1214,7 @@ Respond ONLY in JSON matching this format:
           {[
             { id: 'workflows', label: 'Workflows', icon: Layers },
             { id: 'templates', label: 'Templates', icon: Download },
+            { id: 'memory', label: 'Memory Core', icon: Network },
             { id: 'credentials', label: 'Credentials', icon: Key },
             { id: 'executions', label: 'Executions', icon: Clock },
             { id: 'variables', label: 'Variables', icon: Sliders },
@@ -1205,6 +1287,135 @@ Respond ONLY in JSON matching this format:
                   <div className="text-[7px] text-[#5e6686]">{tpl.nodeCount} nodes</div>
                 </div>
               ))}
+            </div>
+          )}
+          {/* Memory Core panel */}
+          {activeSidebarTab === 'memory' && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Header */}
+              <div className="p-4 border-b border-[#1f2235]/40 bg-[#0a0b12]">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Network className="w-3.5 h-3.5 text-[#b8ff57]" />
+                    <h3 className="text-[10px] text-[#b8ff57] uppercase tracking-widest font-bold">// Memory Core</h3>
+                  </div>
+                  <span className="text-[8px] font-mono text-[#b8ff57]">{memories.length} nodes</span>
+                </div>
+                <div className="relative mb-2">
+                  <Search className="absolute left-2.5 top-2.5 w-3 h-3 text-[#4a5068]" />
+                  <input
+                    type="text"
+                    placeholder="Search memories..."
+                    value={memorySearch}
+                    onChange={(e) => setMemorySearch(e.target.value)}
+                    className="w-full bg-[#141624] border border-[#1f2235] pl-7 pr-3 py-1.5 text-[10px] text-[#e8eaf6] font-mono focus:outline-none focus:border-[#b8ff57] placeholder-[#4a5068]"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {['all', 'decision', 'bug', 'pattern', 'context', 'file', 'note'].map(t => (
+                    <button
+                      key={t}
+                      onClick={() => setMemoryFilter(t)}
+                      style={memoryFilter === t && t !== 'all' ? { borderColor: MEMORY_TYPE_COLORS[t], color: '#141414', background: MEMORY_TYPE_COLORS[t] } : {}}
+                      className={cn(
+                        "px-1.5 py-0.5 border text-[8px] font-mono transition-all rounded-sm",
+                        memoryFilter === t && t === 'all'
+                          ? "bg-[#E4E3E0] border-[#E4E3E0] text-[#141414]"
+                          : "bg-transparent border-[#1f2235] text-[#4a5068] hover:border-[#444]"
+                      )}
+                    >
+                      {t.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={handleExportMemories}
+                  className="mt-2 w-full flex items-center justify-center gap-2 px-2 py-1.5 border border-[#1f2235] text-[8px] font-mono text-[#808eb5] hover:text-[#b8ff57] hover:border-[#b8ff57]/30 transition-all rounded-sm"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>EXPORT KNOWLEDGE GRAPH</span>
+                </button>
+              </div>
+
+              {/* Drag-and-drop import */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); setMemoryDragOver(true); }}
+                onDragLeave={() => setMemoryDragOver(false)}
+                onDrop={handleMemoryDrop}
+                onClick={() => document.getElementById('memoryFileInput')?.click()}
+                className={cn(
+                  "m-3 p-3 border border-dashed text-center rounded-sm cursor-pointer transition-all shrink-0 font-mono text-[8px]",
+                  memoryDragOver ? "border-[#b8ff57] bg-[#b8ff57]/5 text-[#b8ff57]" : "border-[#1f2235] text-[#4a5068] hover:border-[#444]"
+                )}
+              >
+                <Upload className="w-3.5 h-3.5 mx-auto mb-1" />
+                <span>DROP FILE OR CLICK TO IMPORT</span>
+                <input
+                  type="file"
+                  id="memoryFileInput"
+                  multiple
+                  onChange={(e) => e.target.files && processMemoryFiles(e.target.files)}
+                  className="hidden"
+                  accept=".js,.ts,.tsx,.jsx,.py,.md,.txt,.json,.css,.html"
+                />
+              </div>
+
+              {/* Memory list */}
+              <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-1.5">
+                {memories
+                  .filter(m => {
+                    const matchFilter = memoryFilter === 'all' || m.type === memoryFilter;
+                    const matchSearch = m.title.toLowerCase().includes(memorySearch.toLowerCase()) ||
+                                        m.content.toLowerCase().includes(memorySearch.toLowerCase());
+                    return matchFilter && matchSearch;
+                  })
+                  .map(m => (
+                  <div
+                    key={m.id}
+                    onClick={() => {
+                      const matched = memories.find(mem => mem.id === m.id);
+                      if (matched) {
+                        setActiveMemoryNode(matched);
+                        setMemoryFormTitle(matched.title);
+                        setMemoryFormType(matched.type);
+                        setMemoryFormContent(matched.content);
+                      }
+                    }}
+                    className="p-2.5 border border-[#1f2235]/40 bg-[#0c0d12] hover:border-[#333] transition-all cursor-pointer rounded-sm"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span
+                        style={{ color: MEMORY_TYPE_COLORS[m.type] || '#6b7394' }}
+                        className="text-[7px] font-mono font-bold tracking-widest uppercase"
+                      >
+                        {m.type}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteMemory(m.id);
+                          showNotification('Memory node deleted');
+                        }}
+                        className="text-[#444] hover:text-red-500 transition-colors p-0.5"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <h4 className="text-[10px] font-semibold text-[#e8eaf6] mb-0.5 leading-tight truncate">{m.title}</h4>
+                    <p className="text-[8px] text-[#4a5068] font-mono leading-relaxed truncate">{m.content}</p>
+                  </div>
+                ))}
+                {memories.filter(m => {
+                  const matchFilter = memoryFilter === 'all' || m.type === memoryFilter;
+                  const matchSearch = m.title.toLowerCase().includes(memorySearch.toLowerCase()) ||
+                                      m.content.toLowerCase().includes(memorySearch.toLowerCase());
+                  return matchFilter && matchSearch;
+                }).length === 0 && (
+                  <div className="text-center py-8 font-mono text-[8px] text-[#4a5068] tracking-widest">
+                    NO MEMORY NODES FOUND
+                  </div>
+                )}
+              </div>
             </div>
           )}
           {/* Credentials panel */}
@@ -1977,6 +2188,21 @@ Respond ONLY in JSON matching this format:
               {/* Telemetry tab */}
               {bottomDrawerTab === 'telemetry' && (
                 <div className="h-full flex flex-col min-h-0">
+                  {/* Metrics Strip */}
+                  <div className="pb-2 mb-2 border-b border-[#1f2235]/20 grid grid-cols-4 gap-2 shrink-0">
+                    {[
+                      { label: 'ERRORS', value: events.filter(e => e.severity === 'error').length, color: '#ff3d6b' },
+                      { label: 'WARNINGS', value: events.filter(e => e.severity === 'warning').length, color: '#ffc147' },
+                      { label: 'JS RUNTIME', value: events.filter(e => e.type === 'js_error').length, color: '#00f5d4' },
+                      { label: 'NETWORK', value: events.filter(e => e.type === 'network').length, color: '#5b5eff' },
+                    ].map((m, idx) => (
+                      <div key={idx} className="flex items-center justify-between bg-[#0b0c14] border border-[#1f2235]/30 px-2 py-1 rounded-sm">
+                        <span className="text-[7px] text-[#4c5475] tracking-widest">{m.label}</span>
+                        <span style={{ color: m.color }} className="text-sm font-bold">{m.value}</span>
+                      </div>
+                    ))}
+                  </div>
+
                   {/* Telemetry Toolbar */}
                   <div className="pb-3 border-b border-[#1f2235]/20 mb-3 flex items-center gap-3 shrink-0">
                     <input
@@ -2014,42 +2240,104 @@ Respond ONLY in JSON matching this format:
                   <div className="flex-1 overflow-y-auto space-y-2">
                     {filteredEvents.map(ev => {
                       const aiData = aiExplanations[ev.id];
+                      const isExpanded = expandedEventId === ev.id;
+                      const sevColor = ev.severity === 'error' ? '#ff3d6b' : ev.severity === 'warning' ? '#ffc147' : '#5b5eff';
                       return (
-                        <div key={ev.id} className="bg-[#0b0c14] border border-[#1f2235]/30 p-2.5 rounded flex flex-col gap-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className={cn(
-                              "text-[8px] px-1 py-0.1 rounded font-bold uppercase",
-                              ev.severity === 'error' ? "bg-red-500/20 text-red-500 border border-red-500/30" :
-                              ev.severity === 'warning' ? "bg-yellow-500/20 text-yellow-500 border border-yellow-500/30" :
-                              "bg-[#5b5eff]/20 text-[#5b5eff] border border-[#5b5eff]/30"
-                            )}>
+                        <div key={ev.id} className="bg-[#0b0c14] border border-[#1f2235]/30 rounded overflow-hidden">
+                          {/* Event header row */}
+                          <div
+                            onClick={() => {
+                              setExpandedEventId(isExpanded ? null : ev.id);
+                              if (!isExpanded && (ev.severity === 'error' || ev.severity === 'warning')) handleFetchAIAnalysis(ev);
+                            }}
+                            className="p-2.5 flex items-center gap-2 cursor-pointer"
+                          >
+                            <div
+                              style={{ background: sevColor, boxShadow: `0 0 6px ${sevColor}` }}
+                              className="w-2 h-2 rounded-full shrink-0 animate-pulse"
+                            />
+                            <span
+                              style={{ borderColor: sevColor, color: sevColor }}
+                              className="text-[7px] px-1 py-0.1 rounded font-bold uppercase border bg-transparent"
+                            >
                               {ev.severity}
                             </span>
-                            <span className="text-[9px] text-[#4c5475]">{ev.type}</span>
-                            <span className="text-[9px] text-[#4c5475]">{new Date(ev.timestamp).toLocaleTimeString()}</span>
-                            <span className="text-[9px] text-slate-400 truncate max-w-md ml-2">{ev.message}</span>
+                            <span className="text-[8px] font-mono bg-white/5 px-1 py-0.5 text-[#4c5475]">
+                              {NEXUS_TYPE_LABELS[ev.type] || ev.type.toUpperCase()}
+                            </span>
+                            <span className="text-[8px] text-[#4c5475]">{new Date(ev.timestamp).toLocaleTimeString()}</span>
+                            <span className="text-[9px] text-slate-400 truncate flex-1 ml-1">{ev.message}</span>
                             
-                            {(ev.severity === 'error' || ev.severity === 'warning') && (
+                            <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                               <button
-                                onClick={() => handleFetchAIAnalysis(ev)}
-                                className="ml-auto text-[8.5px] text-[#b8ff57] hover:underline flex items-center gap-1 shrink-0"
+                                onClick={() => onDismissEvent(ev.id)}
+                                className="p-1 hover:bg-red-500/10 text-[#4c5475] hover:text-red-500 transition-colors"
+                                title="Dismiss Event"
                               >
-                                <Cpu className="w-3 h-3 text-[#b8ff57]" />
-                                <span>AI Diagnosis</span>
+                                <Trash2 className="w-3 h-3" />
                               </button>
-                            )}
+                              <button
+                                onClick={() => handleCopyEvent(ev)}
+                                className="p-1 hover:bg-[#5b5eff]/10 text-[#4c5475] hover:text-[#00f5d4] transition-colors"
+                                title="Copy Event JSON"
+                              >
+                                {copiedEventId === ev.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                              </button>
+                              {(ev.severity === 'error' || ev.severity === 'warning') && (
+                                <button
+                                  onClick={() => handleFetchAIAnalysis(ev)}
+                                  className="text-[8px] text-[#b8ff57] hover:underline flex items-center gap-1 shrink-0 px-1"
+                                >
+                                  <Cpu className="w-3 h-3 text-[#b8ff57]" />
+                                  <span>AI</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
 
-                          {/* Ai Explanation area */}
-                          {aiData && (
-                            <div className="mt-1.5 p-2 bg-[#5b5eff]/5 border border-[#5b5eff]/20 rounded-sm text-[9.5px]">
-                              {aiData.loading ? (
-                                <span className="text-[#5e6686] animate-pulse">Running Gemini cognitive diagnostics...</span>
-                              ) : (
+                          {/* Expanded block with stack trace and AI analysis */}
+                          {isExpanded && (
+                            <div className="p-3 bg-[#0a0c14] border-t border-[#1f2235]/30 space-y-3">
+                              {(ev.source || ev.line) && (
+                                <div className="text-[9px] text-[#4c5475] font-mono flex gap-4">
+                                  {ev.source && <span className="truncate">Source: {ev.source}</span>}
+                                  {ev.line && <span>Line: {ev.line}</span>}
+                                </div>
+                              )}
+                              {ev.stack && (
                                 <div className="space-y-1">
-                                  <div className="text-slate-300 leading-relaxed"><strong className="text-[#b8ff57]">Diagnosis:</strong> {aiData.explanation}</div>
-                                  {aiData.fix && (
-                                    <pre className="bg-[#020306] p-1.5 rounded text-[9px] text-emerald-400 overflow-x-auto font-mono">{aiData.fix}</pre>
+                                  <span className="block text-[7px] font-mono text-[#4c5475] uppercase tracking-wider">Console Stack Trace</span>
+                                  <pre className="bg-[#02030a] border border-[#1f2235]/30 p-2 text-[9px] text-red-400 font-mono overflow-x-auto leading-relaxed max-h-32 overflow-y-auto">
+                                    {ev.stack}
+                                  </pre>
+                                </div>
+                              )}
+
+                              {/* AI Explanation area */}
+                              {aiData && (
+                                <div className="p-2.5 border border-[#5b5eff]/15 bg-[#5b5eff]/5 rounded-sm">
+                                  <div className="flex items-center gap-2 mb-1.5">
+                                    <Cpu className="w-3 h-3 text-[#00f5d4]" />
+                                    <span className="text-[7px] font-mono text-[#00f5d4] tracking-widest uppercase">Nexus Cognitive Runtime Analysis</span>
+                                  </div>
+                                  {aiData.loading ? (
+                                    <div className="flex items-center gap-1.5 py-1 animate-pulse">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-[#00f5d4]" />
+                                      <span className="w-1.5 h-1.5 rounded-full bg-[#00f5d4] delay-75" />
+                                      <span className="w-1.5 h-1.5 rounded-full bg-[#00f5d4] delay-150" />
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-2 font-mono">
+                                      <p className="text-[10px] text-slate-300 leading-relaxed">
+                                        <strong className="text-[#b8ff57]">Diagnosis:</strong> {aiData.explanation}
+                                      </p>
+                                      {aiData.fix && (
+                                        <div className="space-y-1">
+                                          <span className="block text-[7px] text-[#4c5475] uppercase tracking-wider">Diagnostic Fix Blueprint</span>
+                                          <pre className="bg-[#01020a] border border-emerald-500/15 p-2 text-[9px] text-emerald-400 overflow-x-auto leading-relaxed whitespace-pre-wrap">{aiData.fix}</pre>
+                                        </div>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
                               )}
@@ -2062,6 +2350,18 @@ Respond ONLY in JSON matching this format:
                     {filteredEvents.length === 0 && (
                       <div className="text-center py-6 text-[#4a5068]">No telemetry stream logs logged for this segment.</div>
                     )}
+                  </div>
+
+                  {/* Integration setup footer */}
+                  <div className="pt-2 mt-2 border-t border-[#1f2235]/20 shrink-0 font-mono text-[8px] text-[#4c5475] leading-relaxed flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Terminal className="w-3 h-3 text-[#5b5eff]" />
+                      <span>Integrate Nexus script: <code className="text-[#5b5eff]">{`<script src="nexus-monitor.js"></script>`}</code> to capture telemetry.</span>
+                    </div>
+                    <button className="text-[#00f5d4] hover:underline flex items-center gap-1 shrink-0 ml-2">
+                      <span>Setup Guide</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </button>
                   </div>
                 </div>
               )}

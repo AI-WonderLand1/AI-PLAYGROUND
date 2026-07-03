@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Playground } from './components/Playground';
-import { MemoryCore } from './components/MemoryCore';
-import { NexusMonitor } from './components/NexusMonitor';
 import { AIWonderCanvas } from './components/AIWonderCanvas';
 import { ApiKeysModal } from './components/ApiKeysModal';
 import { ModelsCatalog } from './components/ModelsCatalog';
@@ -458,13 +456,14 @@ export default function App() {
           </>
         )}
 
-        {/* AI-WONDER Canvas Orchestrator View (Merged Memory Core & Nexus Monitor) */}
+        {/* AI-WONDER Canvas Orchestrator View */}
         {(currentTab === 'aiwonder' || currentTab === 'workbench') && (
           <AIWonderCanvas
             memories={memories}
             events={events}
             onAddMemory={handleAddMemory}
             onDeleteMemory={handleDeleteMemory}
+            onImportMemories={handleImportMemories}
             onClearEvents={handleClearEvents}
             onDismissEvent={handleDismissEvent}
             currentTab={currentTab}
