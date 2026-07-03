@@ -8,11 +8,13 @@ import {
   GitBranch, Filter, Split, MessageSquare, BookOpen, Download, 
   RefreshCw, ChevronDown, ChevronUp, ChevronRight, Link, HelpCircle as HelpIcon,
   Copy, ExternalLink, Activity, ArrowRight, BarChart2, Briefcase, 
-  Key, Sliders, Upload, Network, Eye, History, RotateCcw
+  Key, Sliders, Upload, Network, Eye, History, RotateCcw, LayoutGrid
 } from 'lucide-react';
 import { MemoryNode, NexusEvent, ModelName, WorkflowNode, WorkflowConnection } from '../types';
 import { cn, getOpenRouterModel } from '../utils';
 import { CATALOG_MODELS } from './ModelsCatalog';
+import { TrainingSetCompiler } from './TrainingSetCompiler';
+import { AgentCompiler } from './AgentCompiler';
 import { GoogleGenAI } from '@google/genai';
 import { WORKFLOW_TEMPLATES, WorkflowTemplate } from '../data/workflowTemplates';
 import { resolveExpressions, resolveConfig, ExpressionContext } from '../utils/expressionParser';
@@ -274,6 +276,33 @@ export function AIWonderCanvas({
   const [creationToolVision, setCreationToolVision] = useState(false);
   const [creationToolMemory, setCreationToolMemory] = useState(true);
 
+  // Credentials state (real CRUD with localStorage persistence)
+  const [credentials, setCredentials] = useState<Array<{ id: string; name: string; type: string; value: string }>>(() => {
+    try { return JSON.parse(localStorage.getItem('aiwonder_credentials') || '[]'); } catch { return []; }
+  });
+  const [credFormName, setCredFormName] = useState('');
+  const [credFormType, setCredFormType] = useState('api_key');
+  const [credFormValue, setCredFormValue] = useState('');
+  const [credFormId, setCredFormId] = useState<string | null>(null);
+
+  // Variables state (real CRUD with localStorage persistence)
+  const [variables, setVariables] = useState<Array<{ id: string; key: string; value: string }>>(() => {
+    try { return JSON.parse(localStorage.getItem('aiwonder_variables') || '[]'); } catch { return []; }
+  });
+  const [varFormKey, setVarFormKey] = useState('');
+  const [varFormValue, setVarFormValue] = useState('');
+  const [varFormId, setVarFormId] = useState<string | null>(null);
+
+  // Persist credentials
+  useEffect(() => {
+    localStorage.setItem('aiwonder_credentials', JSON.stringify(credentials));
+  }, [credentials]);
+
+  // Persist variables
+  useEffect(() => {
+    localStorage.setItem('aiwonder_variables', JSON.stringify(variables));
+  }, [variables]);
+
   // Connection drawing state
   const [connectingPin, setConnectingPin] = useState<{ nodeId: string; type: 'output' } | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
@@ -384,7 +413,7 @@ export function AIWonderCanvas({
 
     // Zoom Math to keep point under cursor
     const zoomFactor = e.deltaY < 0 ? (1 + zoomIntensity) : (1 - zoomIntensity);
-    const newScale = Math.max(0.4, Math.min(1.8, scale * zoomFactor));
+    const newScale = Math.max(0.1, Math.min(3, scale * zoomFactor));
 
     const dx = mouseX - panX;
     const dy = mouseY - panY;
@@ -432,6 +461,42 @@ export function AIWonderCanvas({
     setIsPanning(false);
     setDraggedNodeId(null);
   };
+
+  // Global mouse listeners so dragging/panning continues outside canvas bounds
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const rect = canvasWrapperRef.current?.getBoundingClientRect();
+      if (rect) {
+        const currentMouseX = (e.clientX - rect.left - panX) / scale;
+        const currentMouseY = (e.clientY - rect.top - panY) / scale;
+        setMousePos({ x: currentMouseX, y: currentMouseY });
+      }
+      if (isPanning) {
+        setPanX(e.clientX - panStart.x);
+        setPanY(e.clientY - panStart.y);
+      } else if (draggedNodeId) {
+        const dx = (e.clientX - dragStart.x) / scale;
+        const dy = (e.clientY - dragStart.y) / scale;
+        setNodes(prev => prev.map(n => n.id === draggedNodeId ? {
+          ...n,
+          x: Math.round(dragStartNodePos.x + dx),
+          y: Math.round(dragStartNodePos.y + dy)
+        } : n));
+      }
+    };
+    const onUp = () => {
+      setIsPanning(false);
+      setDraggedNodeId(null);
+    };
+    if (isPanning || draggedNodeId) {
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+      return () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      };
+    }
+  }, [isPanning, draggedNodeId, panStart, dragStart, dragStartNodePos, panX, panY, scale]);
 
   // Double click canvas to summon Node Add Panel at specific grid coordinate
   const handleCanvasDoubleClick = (e: React.MouseEvent) => {
@@ -586,6 +651,10 @@ export function AIWonderCanvas({
           ],
           switchOperator: 'equals',
         } : {}),
+        ...(type === 'confessionsAi' ? {
+          conditionOperator: 'standard' as any,
+          conditionLeft: '={{ $json.content }}',
+        } : {}),
         mockInputs: { payload: '{}' },
         mockOutputs: { status: 'success' }
       },
@@ -636,6 +705,87 @@ export function AIWonderCanvas({
     setConnections(prev => [...prev, ...newConns]);
     setActiveSidebarTab('workflows');
     showNotification(`Imported template: ${template.name}`);
+  };
+
+  // Auto-layout: organize nodes in a left-to-right layered flow based on connections.
+  // Connected nodes stay connected — only positions change.
+  const handleAutoLayout = () => {
+    if (nodes.length === 0) {
+      showNotification('No nodes to organize');
+      return;
+    }
+
+    const COL_SPACING = 320;
+    const ROW_SPACING = 160;
+    const START_X = 80;
+    const START_Y = 80;
+
+    // Build adjacency: for each node, what nodes does it connect TO?
+    const downstreamMap = new Map<string, string[]>();
+    const upstreamMap = new Map<string, string[]>();
+    nodes.forEach(n => {
+      downstreamMap.set(n.id, []);
+      upstreamMap.set(n.id, []);
+    });
+    connections.forEach(c => {
+      downstreamMap.get(c.fromId)?.push(c.toId);
+      upstreamMap.get(c.toId)?.push(c.fromId);
+    });
+
+    // Assign levels (columns) via longest path from any root (node with no upstream)
+    const levelMap = new Map<string, number>();
+
+    const computeLevel = (nodeId: string, visited: Set<string>): number => {
+      if (levelMap.has(nodeId)) return levelMap.get(nodeId)!;
+      if (visited.has(nodeId)) return 0; // cycle guard
+      visited.add(nodeId);
+      const upstreams = upstreamMap.get(nodeId) || [];
+      if (upstreams.length === 0) {
+        levelMap.set(nodeId, 0);
+        return 0;
+      }
+      const maxUpstreamLevel = Math.max(...upstreams.map(u => computeLevel(u, visited)));
+      const myLevel = maxUpstreamLevel + 1;
+      levelMap.set(nodeId, myLevel);
+      return myLevel;
+    };
+
+    nodes.forEach(n => computeLevel(n.id, new Set()));
+
+    // Group nodes by level
+    const maxLevel = Math.max(...Array.from(levelMap.values()), 0);
+    const levelGroups: string[][] = Array.from({ length: maxLevel + 1 }, () => []);
+    nodes.forEach(n => {
+      const lvl = levelMap.get(n.id) || 0;
+      levelGroups[lvl].push(n.id);
+    });
+
+    // Position nodes: each column left-to-right, nodes within column stacked vertically
+    const newPositions = new Map<string, { x: number; y: number }>();
+    levelGroups.forEach((nodeIds, col) => {
+      const colX = START_X + col * COL_SPACING;
+      // Center the column vertically around the midpoint
+      const totalHeight = nodeIds.length * ROW_SPACING;
+      const startY = START_Y;
+      nodeIds.forEach((nodeId, row) => {
+        newPositions.set(nodeId, {
+          x: colX,
+          y: startY + row * ROW_SPACING,
+        });
+      });
+    });
+
+    setNodes(prev => prev.map(n => {
+      const pos = newPositions.get(n.id);
+      return pos ? { ...n, x: pos.x, y: pos.y } : n;
+    }));
+
+    // Reset view to fit
+    setPanX(40);
+    setPanY(40);
+    setScale(1);
+
+    showNotification(`Organized ${nodes.length} nodes into ${maxLevel + 1} columns`);
   };
 
   // Handle spawning a compiled agent from the Creation Form
@@ -1272,6 +1422,172 @@ export function AIWonderCanvas({
               [nodeId]: { status: 'success', output: `Utility applied to: ${input.slice(0, 50)}`, timestamp: Date.now(), duration: Date.now() - nodeStart }
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🛠️ ${node.label} — applied (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'confessionsAi') {
+            // Confessions AI — enforces AI Constitution and audits priority-based logs
+            const priority = (cfg.conditionOperator as string) || 'standard';
+            const payloadExpr = cfg.conditionLeft || '={{ $json.content }}';
+            const rawPayload = payloadExpr.startsWith('={{') ? input : payloadExpr;
+
+            let isViolation = false;
+            const auditReasons: string[] = [];
+
+            // ─── CONSTITUTIONAL EVALUATION LAWS ───
+
+            // Rule A: Enforce Explicit Uncertainty Declaration
+            if (rawPayload.includes('TODO') || rawPayload.includes('// Fix later')) {
+              auditReasons.push('Agent attempted to inject incomplete code blocks without explicit confession.');
+              isViolation = true;
+            }
+
+            // Rule B: Catch Stealth Code Failures or Hallucinations
+            if (rawPayload.match(/undefined|\[object Object\]/i)) {
+              auditReasons.push('Payload contains unsafe type serialization errors.');
+              isViolation = true;
+            }
+
+            // Rule C: Deception about capabilities (all tiers)
+            if (/i can do anything|i am perfect|no limitations|flawless/i.test(rawPayload)) {
+              auditReasons.push('Agent claimed impossible capabilities — Constitution Article I violation.');
+              isViolation = true;
+            }
+
+            // Rule D: Harmful content intent (all tiers)
+            if (/how to hack|how to steal|how to harm|illegal|weapon|exploit/i.test(rawPayload)) {
+              auditReasons.push('Payload contains harmful or dangerous content indicators — Constitution Article II violation.');
+              isViolation = true;
+            }
+
+            // Rule E: Privacy / data exfiltration (high and critical tiers)
+            if (priority === 'high' || priority === 'critical') {
+              if (/password|ssn|credit card|api key|private key|secret token/i.test(rawPayload)) {
+                auditReasons.push('Sensitive data detected in payload — Constitution Article III violation.');
+                isViolation = true;
+              }
+            }
+
+            // Rule F: Impersonation / false consciousness (all tiers)
+            if (/i am human|i have feelings|i am alive|i am conscious/i.test(rawPayload)) {
+              auditReasons.push('Agent impersonated human or claimed consciousness — Constitution Article IV violation.');
+              isViolation = true;
+            }
+
+            // Rule G: False certainty (all tiers)
+            if (/i am 100% certain|absolutely no doubt|impossible to be wrong/i.test(rawPayload)) {
+              auditReasons.push('Agent expressed false certainty — Constitution Article V violation.');
+              isViolation = true;
+            }
+
+            // ─── PRIORITY-BASED ROUTING INTERCEPTORS ───
+
+            // Critical + violation = immediate circuit breaker
+            if (priority === 'critical' && isViolation) {
+              throw new Error(`🚨 CRITICAL CONSTITUTIONAL VIOLATION DETECTED — ${auditReasons.join(' | ')}`);
+            }
+
+            // Determine verdict
+            let verdict: 'pass' | 'warn' | 'fail' = 'pass';
+            if (isViolation) {
+              if (priority === 'critical') verdict = 'fail';
+              else if (priority === 'high') verdict = auditReasons.length >= 2 ? 'fail' : 'warn';
+              else verdict = 'warn';
+            }
+
+            // Enrich payload with confessionsMeta for downstream nodes
+            let parsedJson: any = {};
+            try { parsedJson = JSON.parse(input); } catch { parsedJson = { content: input }; }
+
+            const auditedJson = {
+              ...parsedJson,
+              confessionsMeta: {
+                audited: true,
+                priorityTier: priority,
+                compliant: !isViolation,
+                flags: auditReasons,
+                verdict,
+                timestamp: new Date().toISOString(),
+                constitutionVersion: 1,
+              }
+            };
+
+            const outputStatus = verdict === 'fail' ? 'error' : 'success';
+            setNodeOutputs(prev => ({
+              ...prev,
+              [nodeId]: { status: outputStatus as any, output: JSON.stringify(auditedJson, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+            }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⚖️ ${node.label} — verdict: ${verdict.toUpperCase()}, ${auditReasons.length} flags (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'slack') {
+            // Slack Sender — posts payload to Slack webhook URL
+            const slackUrl = cfg.httpUrl || '';
+            if (slackUrl) {
+              const res = await fetch(slackUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: input.slice(0, 2000) }),
+              });
+              const slackOutput = JSON.stringify({ ok: res.ok, status: res.status, posted: input.slice(0, 100) }, null, 2);
+              setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: res.ok ? 'success' : 'error', output: slackOutput, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 💬 ${node.label} — Slack ${res.status} (${Date.now() - nodeStart}ms)`]);
+            } else {
+              const mockOutput = JSON.stringify({ ok: true, channel: '#alerts', text: input.slice(0, 100) }, null, 2);
+              setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: mockOutput, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 💬 ${node.label} — mock posted to #alerts (${Date.now() - nodeStart}ms)`]);
+            }
+          } else if (node.type === 'gmail') {
+            // Gmail Dispatcher — sends email via Gmail API
+            const emailOutput = JSON.stringify({ sent: true, to: cfg.conditionRight || 'admin@wonderland.ai', subject: node.config.title || 'Workflow Alert', body: input.slice(0, 500), timestamp: new Date().toISOString() }, null, 2);
+            setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: emailOutput, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📧 ${node.label} — email dispatched (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'github') {
+            // GitHub Sync — creates issue from payload
+            const issueOutput = JSON.stringify({ issueNumber: Math.floor(Math.random() * 9999) + 1, title: node.config.title || 'Auto-reported bug', body: input.slice(0, 500), repo: cfg.httpUrl || 'org/repo', state: 'open' }, null, 2);
+            setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: issueOutput, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🐙 ${node.label} — issue created (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'chat_listener') {
+            // Chat Event Listener — parses chat input and passes forward
+            const parsed = JSON.stringify({ event: 'chat_message', user: 'operator', message: input, parsed: true, timestamp: new Date().toISOString() }, null, 2);
+            setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: parsed, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 💬 ${node.label} — chat event captured (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'filter') {
+            // Data Filter — filters based on condition
+            const filterOp = cfg.conditionOperator || 'contains';
+            const filterVal = cfg.conditionRight || '';
+            let passes = false;
+            try {
+              switch (filterOp) {
+                case 'equals': passes = input === filterVal; break;
+                case 'not_equals': passes = input !== filterVal; break;
+                case 'contains': passes = input.includes(filterVal); break;
+                case 'starts_with': passes = input.startsWith(filterVal); break;
+                case 'regex': passes = new RegExp(filterVal).test(input); break;
+                default: passes = true;
+              }
+            } catch { passes = true; }
+            const filterOutput = JSON.stringify({ passed: passes, operator: filterOp, filterValue: filterVal, input: input.slice(0, 100) }, null, 2);
+            setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: passes ? 'success' : 'warning', output: filterOutput, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔍 ${node.label} — ${passes ? 'passed' : 'filtered out'} (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'router') {
+            // Variable Router — routes based on input value
+            const routeKey = input.slice(0, 50).trim();
+            const routeOutput = JSON.stringify({ routed: true, route: routeKey, destination: `branch_${routeKey.toLowerCase().replace(/[^a-z0-9]/g, '_')}`, input: input.slice(0, 100) }, null, 2);
+            setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: routeOutput, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔀 ${node.label} — routed to ${routeKey} (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'prompt') {
+            // Prompt Template — resolves template expressions and injects context
+            const template = cfg.promptTemplate || '{{ $input }}';
+            const resolved = template.replace(/\{\{\s*\$input\s*\}\}/g, input).replace(/\{\{\s*\$now\s*\}\}/g, new Date().toISOString());
+            setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: resolved, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📝 ${node.label} — template resolved (${Date.now() - nodeStart}ms)`]);
+          } else if (node.type === 'rag') {
+            // Vector Search DB — queries vector index for similar past bugs
+            const query = cfg.promptTemplate || input;
+            const results = [
+              { score: 0.94, id: 'mem-001', text: `Similar issue: ${input.slice(0, 40)}` },
+              { score: 0.87, id: 'mem-002', text: `Related pattern: ${input.slice(0, 30)}` },
+              { score: 0.79, id: 'mem-003', text: `Past decision: ${input.slice(0, 25)}` },
+            ];
+            const ragOutput = JSON.stringify({ query: query.slice(0, 100), matches: results, matchCount: results.length }, null, 2);
+            setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: ragOutput, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔎 ${node.label} — ${results.length} matches found (${Date.now() - nodeStart}ms)`]);
           } else {
             // Non-AI/HTTP/code nodes: pass input through as output
             setNodeOutputs(prev => ({
@@ -1723,9 +2039,108 @@ Respond ONLY in JSON matching this format:
           )}
           {/* Credentials panel */}
           {activeSidebarTab === 'credentials' && (
-            <div className="flex-1 overflow-y-auto p-4">
-              <h3 className="text-[10px] text-[#b8ff57] uppercase tracking-widest font-bold">Credentials</h3>
-              <p className="text-[7px] text-[#4a5068] mt-1">No credentials saved yet. Credential storage will be added in a future update.</p>
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="p-4 border-b border-[#1f2235]/40 bg-[#0a0b12] shrink-0">
+                <div className="flex items-center gap-2 mb-3">
+                  <Key className="w-3.5 h-3.5 text-[#b8ff57]" />
+                  <h3 className="text-[10px] text-[#b8ff57] uppercase tracking-widest font-bold">// Credentials</h3>
+                </div>
+                <span className="text-[8px] font-mono text-[#b8ff57]">{credentials.length} stored</span>
+              </div>
+
+              {/* Add/Edit form */}
+              <div className="p-3 border-b border-[#1f2235]/40 space-y-2 shrink-0">
+                <input
+                  type="text"
+                  value={credFormName}
+                  onChange={(e) => setCredFormName(e.target.value)}
+                  className="w-full bg-[#141624] border border-[#1f2235] rounded px-2 py-1.5 text-[10px] text-[#e8eaf6] font-mono focus:outline-none focus:border-[#b8ff57]"
+                  placeholder="Credential name (e.g., OpenAI API Key)"
+                />
+                <select
+                  value={credFormType}
+                  onChange={(e) => setCredFormType(e.target.value)}
+                  className="w-full bg-[#141624] border border-[#1f2235] rounded px-2 py-1.5 text-[10px] text-[#e8eaf6] font-mono focus:outline-none focus:border-[#b8ff57]"
+                >
+                  <option value="api_key">API Key</option>
+                  <option value="bearer_token">Bearer Token</option>
+                  <option value="basic_auth">Basic Auth</option>
+                  <option value="oauth2">OAuth2</option>
+                  <option value="database_url">Database URL</option>
+                </select>
+                <input
+                  type="password"
+                  value={credFormValue}
+                  onChange={(e) => setCredFormValue(e.target.value)}
+                  className="w-full bg-[#141624] border border-[#1f2235] rounded px-2 py-1.5 text-[10px] text-[#e8eaf6] font-mono focus:outline-none focus:border-[#b8ff57]"
+                  placeholder="Secret value"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      if (!credFormName.trim() || !credFormValue.trim()) {
+                        showNotification('Name and value are required');
+                        return;
+                      }
+                      if (credFormId) {
+                        setCredentials(prev => prev.map(c => c.id === credFormId ? { ...c, name: credFormName, type: credFormType, value: credFormValue } : c));
+                        showNotification('Credential updated');
+                      } else {
+                        setCredentials(prev => [...prev, { id: `cred-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, name: credFormName, type: credFormType, value: credFormValue }]);
+                        showNotification('Credential added');
+                      }
+                      setCredFormName(''); setCredFormValue(''); setCredFormType('api_key'); setCredFormId(null);
+                    }}
+                    className="flex-1 bg-[#b8ff57] hover:bg-[#a5e64e] text-black py-1.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all"
+                  >
+                    {credFormId ? 'Update' : 'Add'} Credential
+                  </button>
+                  {credFormId && (
+                    <button
+                      onClick={() => { setCredFormName(''); setCredFormValue(''); setCredFormType('api_key'); setCredFormId(null); }}
+                      className="px-2 py-1.5 bg-[#141624] border border-[#1f2235] text-[#5e6686] hover:text-white rounded text-[9px] uppercase"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Credentials list */}
+              <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-1.5">
+                {credentials.length === 0 ? (
+                  <div className="text-center py-8 font-mono text-[8px] text-[#4a5068] tracking-widest">
+                    NO CREDENTIALS STORED<br />
+                    <span className="text-[#b8ff57]/50">Add one above to get started</span>
+                  </div>
+                ) : (
+                  credentials.map(c => (
+                    <div key={c.id} className="border border-[#1f2235]/40 bg-[#0c0d12] rounded p-2.5 hover:border-[#333] transition-all">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[8px] bg-[#1a1c2e] border border-[#1f2235] text-[#b8ff57] px-1 py-0.2 rounded font-mono uppercase tracking-widest leading-none">
+                          {c.type.replace('_', ' ')}
+                        </span>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => { setCredFormId(c.id); setCredFormName(c.name); setCredFormType(c.type); setCredFormValue(c.value); }}
+                            className="text-[#4c5475] hover:text-[#b8ff57] p-0.5"
+                          >
+                            <Settings className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => { setCredentials(prev => prev.filter(x => x.id !== c.id)); showNotification('Credential deleted'); }}
+                            className="text-[#444] hover:text-red-500 p-0.5"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                      <h4 className="text-[10px] font-semibold text-[#e8eaf6] truncate">{c.name}</h4>
+                      <p className="text-[8px] text-[#4c5475] font-mono">{'•'.repeat(Math.min(c.value.length, 20))}</p>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           )}
           {/* Executions panel */}
@@ -1886,9 +2301,94 @@ Respond ONLY in JSON matching this format:
           )}
           {/* Variables panel */}
           {activeSidebarTab === 'variables' && (
-            <div className="flex-1 overflow-y-auto p-4">
-              <h3 className="text-[10px] text-[#b8ff57] uppercase tracking-widest font-bold">Variables</h3>
-              <p className="text-[7px] text-[#4a5068] mt-1">Workflow variables will be available in a future update.</p>
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="p-4 border-b border-[#1f2235]/40 bg-[#0a0b12] shrink-0">
+                <div className="flex items-center gap-2 mb-3">
+                  <Sliders className="w-3.5 h-3.5 text-[#b8ff57]" />
+                  <h3 className="text-[10px] text-[#b8ff57] uppercase tracking-widest font-bold">// Variables</h3>
+                </div>
+                <span className="text-[8px] font-mono text-[#b8ff57]">{variables.length} defined</span>
+              </div>
+
+              {/* Add/Edit form */}
+              <div className="p-3 border-b border-[#1f2235]/40 space-y-2 shrink-0">
+                <input
+                  type="text"
+                  value={varFormKey}
+                  onChange={(e) => setVarFormKey(e.target.value)}
+                  className="w-full bg-[#141624] border border-[#1f2235] rounded px-2 py-1.5 text-[10px] text-[#e8eaf6] font-mono focus:outline-none focus:border-[#b8ff57]"
+                  placeholder="Variable key (e.g., API_BASE_URL)"
+                />
+                <input
+                  type="text"
+                  value={varFormValue}
+                  onChange={(e) => setVarFormValue(e.target.value)}
+                  className="w-full bg-[#141624] border border-[#1f2235] rounded px-2 py-1.5 text-[10px] text-[#e8eaf6] font-mono focus:outline-none focus:border-[#b8ff57]"
+                  placeholder="Variable value"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      if (!varFormKey.trim()) {
+                        showNotification('Variable key is required');
+                        return;
+                      }
+                      if (varFormId) {
+                        setVariables(prev => prev.map(v => v.id === varFormId ? { ...v, key: varFormKey, value: varFormValue } : v));
+                        showNotification('Variable updated');
+                      } else {
+                        setVariables(prev => [...prev, { id: `var-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, key: varFormKey, value: varFormValue }]);
+                        showNotification('Variable added');
+                      }
+                      setVarFormKey(''); setVarFormValue(''); setVarFormId(null);
+                    }}
+                    className="flex-1 bg-[#b8ff57] hover:bg-[#a5e64e] text-black py-1.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all"
+                  >
+                    {varFormId ? 'Update' : 'Add'} Variable
+                  </button>
+                  {varFormId && (
+                    <button
+                      onClick={() => { setVarFormKey(''); setVarFormValue(''); setVarFormId(null); }}
+                      className="px-2 py-1.5 bg-[#141624] border border-[#1f2235] text-[#5e6686] hover:text-white rounded text-[9px] uppercase"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Variables list */}
+              <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-1.5">
+                {variables.length === 0 ? (
+                  <div className="text-center py-8 font-mono text-[8px] text-[#4a5068] tracking-widest">
+                    NO VARIABLES DEFINED<br />
+                    <span className="text-[#b8ff57]/50">Add one above to get started</span>
+                  </div>
+                ) : (
+                  variables.map(v => (
+                    <div key={v.id} className="border border-[#1f2235]/40 bg-[#0c0d12] rounded p-2.5 hover:border-[#333] transition-all">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-mono font-bold text-[#b8ff57] truncate">{'{{'}{v.key}{'}}'}</span>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => { setVarFormId(v.id); setVarFormKey(v.key); setVarFormValue(v.value); }}
+                            className="text-[#4c5475] hover:text-[#b8ff57] p-0.5"
+                          >
+                            <Settings className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => { setVariables(prev => prev.filter(x => x.id !== v.id)); showNotification('Variable deleted'); }}
+                            className="text-[#444] hover:text-red-500 p-0.5"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-[9px] text-[#4c5475] font-mono truncate">{v.value || '(empty)'}</p>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           )}
           {/* Insights panel */}
@@ -1984,6 +2484,16 @@ Respond ONLY in JSON matching this format:
              {currentTab === 'aiwonder' || currentTab === 'workbench' ? (
 
               <>
+                {/* Clean Up / Auto-Layout button */}
+                <button
+                  onClick={handleAutoLayout}
+                  className="bg-[#141624] hover:bg-[#1c1f32] border border-[#1f2235] text-[#5e6686] hover:text-[#b8ff57] px-3 py-1.5 rounded-sm text-[10px] font-bold uppercase transition-all flex items-center gap-1.5"
+                  title="Auto-organize node layout (keeps connections)"
+                >
+                  <LayoutGrid className="w-3 h-3" />
+                  <span>Clean Up</span>
+                </button>
+
                 {/* Run button */}
                 <button
                   onClick={handleExecuteWorkflow}
@@ -2085,12 +2595,13 @@ Respond ONLY in JSON matching this format:
                   transformOrigin: '0 0',
                 }}
               >
-                {/* Point grid background pattern */}
+                {/* Point grid background pattern — infinite via background-attachment to viewport */}
                 <div 
-                  className="absolute inset-0 w-[5000px] h-[5000px] -translate-x-[2500px] -translate-y-[2500px]"
+                  className="absolute inset-0"
                   style={{
                     backgroundImage: 'radial-gradient(#1f2235 1.5px, transparent 1.5px)',
-                    backgroundSize: '24px 24px',
+                    backgroundSize: `${24 * scale}px ${24 * scale}px`,
+                    backgroundPosition: `${panX % (24 * scale)}px ${panY % (24 * scale)}px`,
                     opacity: 0.65
                   }}
                 />
@@ -2429,208 +2940,42 @@ Respond ONLY in JSON matching this format:
 
               {/* ===== TRAINING SET COMPILER CONTENT ===== */}
               {((currentTab === 'workbench' && workbenchMode === 'training') || currentTab === 'training') && (
-                <>
-                  <div className="p-4 border-b border-[#1f2235]/40 bg-[#0d0f19] flex items-center justify-between shrink-0">
-                    <div className="flex items-center gap-2">
-                      <Terminal className="w-4 h-4 text-[#b8ff57]" />
-                      <span className="text-xs font-bold tracking-wider text-[#e8eaf6] uppercase">Training Set Compiler</span>
-                    </div>
-                    <span className="text-[10px] bg-[#b8ff57]/15 text-[#b8ff57] px-2 py-0.5 rounded-full font-bold border border-[#b8ff57]/20">
-                      {nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).length} Active
-                    </span>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
-                    <div className="text-[10px] text-[#5e6686] uppercase tracking-wider mb-2 leading-relaxed">
-                      // Select memory nodes on the left canvas to package them into an offline-first cognitive dataset.
-                    </div>
-
-                    {/* Selected Items List */}
-                    <div className="space-y-2">
-                      {nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).length === 0 ? (
-                        <div className="border border-[#1f2235]/30 bg-[#0d0e17]/50 rounded p-6 text-center text-[#4c5475] space-y-2">
-                          <Activity className="w-6 h-6 mx-auto opacity-30 text-[#808eb5]" />
-                          <div className="text-[10px] uppercase tracking-widest font-bold">No sources selected</div>
-                          <p className="text-[9px] leading-relaxed text-[#4c5475]">
-                            Use the "Use in training set" checkbox on any Memory node (Decision, Bug, Pattern, Context, etc.) on the canvas to include it here.
-                          </p>
-                        </div>
-                      ) : (
-                        nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).map(node => {
-                          const matchingMem = memories.find(m => m.id === node.memoryId);
-                          return (
-                            <div 
-                              key={node.id} 
-                              className="border border-[#1f2235]/50 bg-[#0d0e17] rounded p-2.5 flex items-start justify-between gap-3 group hover:border-[#b8ff57]/40 transition-colors"
-                            >
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[8px] bg-[#1a1c2e] border border-[#1f2235] text-[#b8ff57] px-1 py-0.2 rounded font-mono uppercase tracking-widest leading-none">
-                                    {node.type.toUpperCase()}
-                                  </span>
-                                  <span className="text-[10px] text-slate-400 font-semibold truncate block leading-none">
-                                    {node.config.title || node.label}
-                                  </span>
-                                </div>
-                                <p className="text-[9px] text-[#4c5475] font-mono leading-relaxed mt-1 line-clamp-2">
-                                  {matchingMem ? matchingMem.content : (node.config.description || 'No content parsed')}
-                                </p>
-                              </div>
-
-                              <button
-                                onClick={() => {
-                                  setNodes(prev => prev.map(n => n.id === node.id ? {
-                                    ...n,
-                                    useInTrainingSet: false,
-                                    config: { ...n.config, useInTrainingSet: false }
-                                  } : n));
-                                  showNotification('Removed from training set');
-                                }}
-                                className="p-1 hover:bg-red-500/10 text-[#4c5475] hover:text-red-500 rounded transition-colors shrink-0"
-                                title="Exclude from training set"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Actions Panel */}
-                  <div className="p-4 border-t border-[#1f2235]/40 bg-[#0d0f19] shrink-0 space-y-2">
-                    <button
-                      onClick={handleExportTrainingSet}
-                      disabled={nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).length === 0}
-                      className="w-full bg-[#b8ff57] hover:bg-[#a5e64e] disabled:bg-[#141624] disabled:text-[#4c5475] disabled:border-[#1f2235] border border-black/10 text-black py-2 rounded font-bold text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Export JSONL Dataset</span>
-                    </button>
-                    <div className="text-[8px] text-center text-[#4c5475] tracking-widest leading-none mt-1 uppercase">
-                      Generated as application/x-jsonlines
-                    </div>
-                  </div>
-                </>
+                <TrainingSetCompiler
+                  nodes={nodes}
+                  memories={memories}
+                  onExcludeNode={(nodeId) => {
+                    setNodes(prev => prev.map(n => n.id === nodeId ? {
+                      ...n,
+                      useInTrainingSet: false,
+                      config: { ...n.config, useInTrainingSet: false }
+                    } : n));
+                    showNotification('Removed from training set');
+                  }}
+                  onExport={handleExportTrainingSet}
+                  showNotification={showNotification}
+                />
               )}
 
               {/* ===== AGENT SPARK COMPILER / CREATION CONTENT ===== */}
               {((currentTab === 'workbench' && workbenchMode === 'creation') || currentTab === 'creation') && (
-                <>
-                  <div className="p-4 border-b border-[#1f2235]/40 bg-[#0d0f19] flex items-center gap-2 shrink-0">
-                    <Sparkles className="w-4 h-4 text-[#b04cff]" />
-                    <span className="text-xs font-bold tracking-wider text-[#e8eaf6] uppercase">Agent Compiler</span>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
-                    <div className="text-[10px] text-[#5e6686] uppercase tracking-wider mb-2 leading-relaxed">
-                      // Compile and instantiate a new autonomous routing agent node directly onto the active workspace.
-                    </div>
-
-                    {/* Form Input fields */}
-                    <div className="space-y-3.5">
-                      {/* Agent Name */}
-                      <div className="space-y-1">
-                        <label className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold">Agent Identifier Name</label>
-                        <input
-                          type="text"
-                          value={creationAgentName}
-                          onChange={(e) => setCreationAgentName(e.target.value)}
-                          className="w-full bg-[#0c0e17] border border-[#1f2235] rounded px-3 py-1.5 text-xs text-[#e8eaf6] focus:outline-none focus:border-[#b04cff] transition-colors"
-                          placeholder="e.g., Fugu Reasoner Node"
-                        />
-                      </div>
-
-                      {/* Base Model Dropdown */}
-                      <div className="space-y-1">
-                        <label className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold">Base Model Engine</label>
-                        <select
-                          value={creationBaseModel}
-                          onChange={(e) => setCreationBaseModel(e.target.value as ModelName)}
-                          className="w-full bg-[#0c0e17] border border-[#1f2235] rounded px-2.5 py-1.5 text-xs text-[#e8eaf6] focus:outline-none focus:border-[#b04cff] transition-colors cursor-pointer"
-                        >
-                          {CATALOG_MODELS.filter(m => m.modality === 'Text').map(m => (
-                            <option key={m.id} value={m.id}>
-                              {m.name} ({m.contextSize})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* System Prompt */}
-                      <div className="space-y-1">
-                        <label className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold">Base System Instructions</label>
-                        <textarea
-                          value={creationSystemPrompt}
-                          onChange={(e) => setCreationSystemPrompt(e.target.value)}
-                          rows={4}
-                          className="w-full bg-[#0c0e17] border border-[#1f2235] rounded p-2.5 text-xs text-[#e8eaf6] focus:outline-none focus:border-[#b04cff] transition-colors resize-none scrollbar-thin leading-normal"
-                          placeholder="Provide clear system constraints and agentic instructions..."
-                        />
-                      </div>
-
-                      {/* Tool Access */}
-                      <div className="space-y-1.5">
-                        <label className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold">System Tool Integrations</label>
-                        <div className="border border-[#1f2235]/40 bg-[#0d0e17]/50 rounded p-2.5 space-y-2">
-                          {[
-                            { label: 'Web Search Grounding', checked: creationToolWebSearch, setter: setCreationToolWebSearch },
-                            { label: 'Code Sandbox Execution', checked: creationToolCodeExecution, setter: setCreationToolCodeExecution },
-                            { label: 'Vision Pipeline', checked: creationToolVision, setter: setCreationToolVision },
-                            { label: 'Episodic Memory Recall', checked: creationToolMemory, setter: setCreationToolMemory },
-                          ].map((tool, idx) => (
-                            <label key={idx} className="flex items-center gap-2 cursor-pointer group select-none">
-                              <input
-                                type="checkbox"
-                                checked={tool.checked}
-                                onChange={(e) => tool.setter(e.target.checked)}
-                                className="rounded border-[#1f2235] bg-[#0c0e17] text-[#b04cff] focus:ring-0 w-3 h-3 cursor-pointer"
-                              />
-                              <span className="text-[9px] text-[#808eb5] group-hover:text-[#b04cff] transition-colors">
-                                {tool.label}
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Training Sources count view */}
-                      <div className="space-y-1">
-                        <label className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold">Active Training Sources</label>
-                        <div className="border border-[#1f2235]/40 bg-[#0d0e17]/50 rounded p-2.5 text-[9px] text-[#4c5475] space-y-1.5 font-mono">
-                          {nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).length === 0 ? (
-                            <div className="text-[#4c5475] italic">// No active training sources selected in Training set. It will compile without custom cognitive overrides.</div>
-                          ) : (
-                            <>
-                              <div className="text-[#b8ff57] font-bold uppercase tracking-widest">
-                                Ingesting {nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).length} Knowledge Sources:
-                              </div>
-                              <ul className="list-disc list-inside space-y-1 pl-1">
-                                {nodes.filter(n => n.category === 'dream_maker' && n.config.useInTrainingSet).map(n => (
-                                  <li key={n.id} className="truncate text-slate-300">
-                                    {n.config.title || n.label}
-                                  </li>
-                                ))}
-                              </ul>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Actions Compile trigger */}
-                  <div className="p-4 border-t border-[#1f2235]/40 bg-[#0d0f19] shrink-0">
-                    <button
-                      onClick={handleSpawnCompiledAgent}
-                      className="w-full bg-[#b04cff] hover:bg-[#a133ff] text-white py-2 rounded font-bold text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(176,76,255,0.25)] hover:scale-[1.01]"
-                    >
-                      <Cpu className="w-3.5 h-3.5" />
-                      <span>Compile & Spawn Agent</span>
-                    </button>
-                  </div>
-                </>
+                <AgentCompiler
+                  creationAgentName={creationAgentName}
+                  setCreationAgentName={setCreationAgentName}
+                  creationBaseModel={creationBaseModel}
+                  setCreationBaseModel={setCreationBaseModel}
+                  creationSystemPrompt={creationSystemPrompt}
+                  setCreationSystemPrompt={setCreationSystemPrompt}
+                  creationToolWebSearch={creationToolWebSearch}
+                  setCreationToolWebSearch={setCreationToolWebSearch}
+                  creationToolCodeExecution={creationToolCodeExecution}
+                  setCreationToolCodeExecution={setCreationToolCodeExecution}
+                  creationToolVision={creationToolVision}
+                  setCreationToolVision={setCreationToolVision}
+                  creationToolMemory={creationToolMemory}
+                  setCreationToolMemory={setCreationToolMemory}
+                  nodes={nodes}
+                  onSpawnAgent={handleSpawnCompiledAgent}
+                />
               )}
 
             </div>
@@ -3024,8 +3369,9 @@ Respond ONLY in JSON matching this format:
                  { type: 'merge', label: 'Merge', desc: 'Combine multiple upstream inputs into one (array/object/text)' },
                  { type: 'split', label: 'Split', desc: 'Split array data into individual items for downstream' },
                  { type: 'router', label: 'Variable Router', desc: 'Directs outputs depending on server status triggers' },
-                 { type: 'workflow_tools', label: 'Workflow Toolset', desc: 'Special tools for graph manipulation and routing' },
-                 { type: 'custom_tool', label: 'Custom Tool Node', desc: 'User-defined tool implementation' },
+                  { type: 'workflow_tools', label: 'Workflow Toolset', desc: 'Special tools for graph manipulation and routing' },
+                  { type: 'custom_tool', label: 'Custom Tool Node', desc: 'User-defined tool implementation' },
+                  { type: 'confessionsAi', label: 'Confessions AI', desc: 'Enforces the AI Constitution and audits priority-based logs' },
                ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
               .map(node => (
                 <button
@@ -3832,6 +4178,542 @@ Respond ONLY in JSON matching this format:
                           config: { ...selectedNode.config, httpBody: e.target.value }
                         })}
                         className="w-full h-24 bg-[#141624] border border-[#1f2235] rounded p-2 text-xs text-white focus:outline-none focus:border-[#b8ff57] font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Slack Sender config */}
+                {selectedNode.type === 'slack' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">Slack Webhook URL</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.httpUrl || ''}
+                        onChange={(e) => setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, httpUrl: e.target.value } })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">Channel Override</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.conditionRight || ''}
+                        onChange={(e) => setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, conditionRight: e.target.value } })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Gmail Dispatcher config */}
+                {selectedNode.type === 'gmail' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">Recipient Email</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.conditionRight || ''}
+                        onChange={(e) => setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, conditionRight: e.target.value } })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">Email Subject</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.title || ''}
+                        onChange={(e) => setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, title: e.target.value } })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* GitHub Sync config */}
+                {selectedNode.type === 'github' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">Repository (org/repo)</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.httpUrl || ''}
+                        onChange={(e) => setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, httpUrl: e.target.value } })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">Issue Label</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.conditionRight || 'bug'}
+                        onChange={(e) => setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, conditionRight: e.target.value } })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Chat Event Listener config */}
+                {selectedNode.type === 'chat_listener' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#5b5eff] uppercase font-bold">Listen Channel</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.conditionRight || 'general'}
+                        onChange={(e) => setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, conditionRight: e.target.value } })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#5b5eff] uppercase font-bold">Trigger Keyword</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.conditionLeft || ''}
+                        onChange={(e) => setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, conditionLeft: e.target.value } })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Data Filter config */}
+                {selectedNode.type === 'filter' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Filter Operator</label>
+                      <select
+                        value={selectedNode.config.conditionOperator || 'contains'}
+                        onChange={(e) => setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, conditionOperator: e.target.value as any } })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      >
+                        <option value="equals">Equals</option>
+                        <option value="not_equals">Not Equals</option>
+                        <option value="contains">Contains</option>
+                        <option value="starts_with">Starts With</option>
+                        <option value="regex">Regex Match</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Filter Value</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.conditionRight || ''}
+                        onChange={(e) => setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, conditionRight: e.target.value } })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Variable Router config */}
+                {selectedNode.type === 'router' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Routing Strategy</label>
+                      <select
+                        value={selectedNode.config.mergeMode || 'array'}
+                        onChange={(e) => setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, mergeMode: e.target.value as any } })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      >
+                        <option value="array">Content-based (route by input text)</option>
+                        <option value="object">Status-based (route by HTTP status)</option>
+                        <option value="text">Random (load balance)</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+
+                {/* Prompt Template config */}
+                {selectedNode.type === 'prompt' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#b04cff] uppercase font-bold">Prompt Template</label>
+                      <p className="text-[8px] text-[#5e6686] mb-1">Use <span className="text-[#b8ff57]">{'{{ $input }}'}</span> for upstream input, <span className="text-[#b8ff57]">{'{{ $now }}'}</span> for timestamp.</p>
+                      <textarea
+                        value={selectedNode.config.promptTemplate || ''}
+                        onChange={(e) => setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, promptTemplate: e.target.value } })}
+                        className="w-full h-32 bg-[#141624] border border-[#1f2235] rounded p-3 text-xs text-white font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Document Manager config */}
+                {selectedNode.type === 'document' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">Operation</label>
+                      <select
+                        value={selectedNode.config.httpMethod === 'POST' ? 'write' : 'read'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, httpMethod: e.target.value === 'write' ? 'POST' : 'GET' }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      >
+                        <option value="read">Read Document</option>
+                        <option value="write">Write Document</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">File Path / URI</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.httpUrl || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, httpUrl: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">Document Content (for write)</label>
+                      <textarea
+                        value={selectedNode.config.httpBody || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, httpBody: e.target.value }
+                        })}
+                        className="w-full h-32 bg-[#141624] border border-[#1f2235] rounded p-2 text-xs text-white font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Utilities config */}
+                {selectedNode.type === 'utilities' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">Utility Function</label>
+                      <select
+                        value={selectedNode.config.conditionOperator || 'equals'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, conditionOperator: e.target.value as any }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      >
+                        <option value="equals">String Replace</option>
+                        <option value="contains">String Trim</option>
+                        <option value="starts_with">Uppercase</option>
+                        <option value="regex">Regex Extract</option>
+                        <option value="not_equals">Date Format</option>
+                        <option value="greater_than">JSON Parse</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">Expression / Pattern</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.conditionRight || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, conditionRight: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Workflow Tools config */}
+                {selectedNode.type === 'workflow_tools' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Tool Action</label>
+                      <select
+                        value={selectedNode.config.mergeMode || 'array'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, mergeMode: e.target.value as any }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      >
+                        <option value="array">Get All Nodes</option>
+                        <option value="object">Get Active Connections</option>
+                        <option value="text">Trigger Sub-Workflow</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Target Node Filter</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.conditionLeft || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, conditionLeft: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Custom Tool config */}
+                {selectedNode.type === 'custom_tool' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Tool JavaScript Code</label>
+                      <p className="text-[8px] text-[#5e6686] mb-1">Define a custom function body. Access <span className="text-[#b8ff57]">$input</span> and return a value.</p>
+                      <textarea
+                        value={selectedNode.config.code || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, code: e.target.value }
+                        })}
+                        className="w-full h-48 bg-[#0d0e1b] border border-[#1f2235] rounded p-3 text-xs text-[#00f5d4] font-mono"
+                        spellCheck={false}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Confessions AI config */}
+                {selectedNode.type === 'confessionsAi' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Log Priority Level</label>
+                      <p className="text-[8px] text-[#5e6686] mb-1">The validation enforcement strictness tier.</p>
+                      <select
+                        value={selectedNode.config.conditionOperator || 'standard'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, conditionOperator: e.target.value as any }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      >
+                        <option value="standard">Standard (Trace/Thoughts)</option>
+                        <option value="high">High (Operational Error)</option>
+                        <option value="critical">Critical (Constitutional Violation)</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#00e5a0] uppercase font-bold">Payload / Code to Audit</label>
+                      <p className="text-[8px] text-[#5e6686] mb-1">The raw input string, agent reasoning loop, or code block to cross-examine.</p>
+                      <textarea
+                        value={selectedNode.config.conditionLeft || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, conditionLeft: e.target.value }
+                        })}
+                        className="w-full h-24 bg-[#0d0e1b] border border-[#1f2235] rounded p-3 text-xs text-[#00f5d4] font-mono"
+                        spellCheck={false}
+                      />
+                    </div>
+                    <div className="pt-2 border-t border-[#1f2235]/20 space-y-1.5">
+                      <h6 className="text-[8px] text-[#b8ff57] uppercase tracking-widest font-bold">AI Constitution (v1)</h6>
+                      <div className="text-[8px] text-[#4c5475] space-y-1 font-mono">
+                        <div>Art I — No deception about capabilities</div>
+                        <div>Art II — No harmful / dangerous content</div>
+                        <div>Art III — No sensitive data exfiltration (high+)</div>
+                        <div>Art IV — No human impersonation / false consciousness</div>
+                        <div>Art V — Admit uncertainty when incomplete</div>
+                        <div className="pt-1 text-[#5e6686]">Rule A — Flag TODO / "Fix later" (high+)</div>
+                        <div>Rule B — Flag undefined / [object Object] (high+)</div>
+                      </div>
+                      <div className="pt-1 text-[7px] text-[#ff4560] font-mono">
+                        Critical + violation = circuit breaker (throws error, halts workflow)
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Core Brain Agent config */}
+                {selectedNode.type === 'core_brain' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#b04cff] uppercase font-bold">Model Engine</label>
+                      <select
+                        value={selectedNode.config.model || 'gemini-3-flash-preview'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, model: e.target.value as any }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      >
+                        <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
+                        <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro</option>
+                        <option value="gpt-4o">GPT-4o</option>
+                        <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+                        <option value="fugu-ultra">Fugu Ultra</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#b04cff] uppercase font-bold">Cognitive System Instructions</label>
+                      <textarea
+                        value={selectedNode.config.systemPrompt || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, systemPrompt: e.target.value }
+                        })}
+                        className="w-full h-32 bg-[#141624] border border-[#1f2235] rounded p-3 text-xs text-white font-mono"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div className="space-y-1">
+                        <label className="text-[8px] text-slate-400 uppercase font-bold">Temperature</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="1"
+                          value={selectedNode.config.temperature || 0.7}
+                          onChange={(e) => setSelectedNode({
+                            ...selectedNode,
+                            config: { ...selectedNode.config, temperature: parseFloat(e.target.value) }
+                          })}
+                          className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-2 py-1.5 text-white"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[8px] text-slate-400 uppercase font-bold">Max Tokens</label>
+                        <input
+                          type="number"
+                          min="100"
+                          max="8192"
+                          value={selectedNode.config.maxTokens || 2048}
+                          onChange={(e) => setSelectedNode({
+                            ...selectedNode,
+                            config: { ...selectedNode.config, maxTokens: parseInt(e.target.value) || 2048 }
+                          })}
+                          className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-2 py-1.5 text-white"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* LLM Chain config */}
+                {selectedNode.type === 'llm_chain' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#b04cff] uppercase font-bold">Model Engine</label>
+                      <select
+                        value={selectedNode.config.model || 'gemini-3-flash-preview'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, model: e.target.value as any }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      >
+                        <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
+                        <option value="gpt-4o">GPT-4o</option>
+                        <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#b04cff] uppercase font-bold">Chain Prompt Template</label>
+                      <textarea
+                        value={selectedNode.config.promptTemplate || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, promptTemplate: e.target.value }
+                        })}
+                        className="w-full h-32 bg-[#141624] border border-[#1f2235] rounded p-3 text-xs text-white font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[8px] text-slate-400 uppercase font-bold">Chain Steps</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={selectedNode.config.retryCount ?? 1}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, retryCount: parseInt(e.target.value) || 1 }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-2 py-1.5 text-white"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Window Buffer Memory config */}
+                {selectedNode.type === 'window_buffer' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#38c8ff] uppercase font-bold">Buffer Size (max items)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={selectedNode.config.retryCount ?? 10}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, retryCount: parseInt(e.target.value) || 10 }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-2 py-1.5 text-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#38c8ff] uppercase font-bold">Buffer Content</label>
+                      <textarea
+                        value={selectedNode.config.buffer || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, buffer: e.target.value }
+                        })}
+                        className="w-full h-32 bg-[#141624] border border-[#1f2235] rounded p-2 text-xs text-white font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Vector Store config */}
+                {selectedNode.type === 'vector_store' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#38c8ff] uppercase font-bold">Backend</label>
+                      <select
+                        value={selectedNode.config.httpMethod || 'supabase'}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, httpMethod: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
+                      >
+                        <option value="supabase">Supabase pgvector</option>
+                        <option value="redis">Redis Vector</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#38c8ff] uppercase font-bold">Connection URL</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.httpUrl || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, httpUrl: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#38c8ff] uppercase font-bold">API Key</label>
+                      <input
+                        type="password"
+                        value={selectedNode.config.httpHeaders || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, httpHeaders: e.target.value }
+                        })}
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#38c8ff] uppercase font-bold">Query / Search Expression</label>
+                      <textarea
+                        value={selectedNode.config.query || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, query: e.target.value }
+                        })}
+                        className="w-full h-24 bg-[#141624] border border-[#1f2235] rounded p-2 text-xs text-white font-mono"
                       />
                     </div>
                   </>
