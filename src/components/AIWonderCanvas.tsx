@@ -433,12 +433,13 @@ export function AIWonderCanvas({
    useEffect(() => {
      if (!isPanning && !draggedNodeId) return;
 
-     const onMove = (e: MouseEvent) => {
-       const dy = (e.clientY - dragStart.y) / scale;
-       setNodes((prev) =>
-         prev.map((n) => (n.id === draggedNodeId ? { ...n, x: Math.round(dragStartNodePos.x + dx), y: Math.round(dragStartNodePos.y + dy) } : n))
-       );
-     };
+      const onMove = (e: MouseEvent) => {
+        const dx = (e.clientX - dragStart.x) / scale;
+        const dy = (e.clientY - dragStart.y) / scale;
+        setNodes((prev) =>
+          prev.map((n) => (n.id === draggedNodeId ? { ...n, x: Math.round(dragStartNodePos.x + dx), y: Math.round(dragStartNodePos.y + dy) } : n))
+        );
+      };
 
      const onUp = () => {
        setIsPanning(false);
@@ -454,7 +455,7 @@ export function AIWonderCanvas({
        window.removeEventListener('mousemove', onMove);
        window.removeEventListener('mouseup', onUp);
      };
-   }, [isPanning, draggedNodeId, dragStart, scale, dx, dragStartNodePos]);
+    }, [isPanning, draggedNodeId, dragStart, scale, dragStartNodePos]);
   // Double click canvas to summon Node Add Panel at specific grid coordinate
   const handleCanvasDoubleClick = (e: React.MouseEvent) => {
     if (currentTab !== 'aiwonder' && currentTab !== 'workbench') return;
