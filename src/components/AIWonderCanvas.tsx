@@ -3309,12 +3309,23 @@ Respond ONLY in JSON matching this format:
             {/* 1. Triggers */}
             <div className="space-y-1.5">
               <h5 className="text-[9px] text-[#5b5eff] uppercase tracking-widest font-bold">// Trigger Nodes</h5>
-              {[
-                { type: 'webhook', label: 'Webhook Trigger', desc: 'Accept incoming webhook payload events' },
-                { type: 'schedule', label: 'Schedule Trigger', desc: 'Run on interval: every N minutes/hours/days' },
-                { type: 'cron', label: 'Cron Scheduler', desc: 'Trigger sequences on absolute cron patterns' },
-                { type: 'chat_listener', label: 'Chat Event Listener', desc: 'Runs workflow upon channel prompt triggers' }
-              ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
+               {[
+                 { type: 'webhook', label: 'Webhook Trigger', desc: 'Accept incoming webhook payload events' },
+                 { type: 'schedule', label: 'Schedule Trigger', desc: 'Run on interval: every N minutes/hours/days' },
+                 { type: 'cron', label: 'Cron Scheduler', desc: 'Trigger sequences on absolute cron patterns' },
+                 { type: 'chat_listener', label: 'Chat Event Listener', desc: 'Runs workflow upon channel prompt triggers' },
+                 { type: 'calendly', label: 'Calendly Trigger', desc: 'Trigger on new Calendly event' },
+                 { type: 'email_imap', label: 'Email Trigger (IMAP)', desc: 'Trigger on incoming email' },
+                 { type: 'gmail_trigger', label: 'Gmail Trigger', desc: 'Trigger on new Gmail message' },
+                 { type: 'drive_trigger', label: 'Google Drive Trigger', desc: 'Trigger on file changes in Drive' },
+                 { type: 'sheets_trigger', label: 'Google Sheets Trigger', desc: 'Trigger on sheet row update' },
+                 { type: 'gumroad_trigger', label: 'Gumroad Trigger', desc: 'Trigger on new Gumroad sale' },
+                 { type: 'file_trigger', label: 'Local File Trigger', desc: 'Trigger on local file system change' },
+                 { type: 'form_submission', label: 'On Form Submission', desc: 'Trigger on form submit event' },
+                 { type: 'test_workflow', label: 'When Clicking "Test Workflow"', desc: 'Manual test trigger' },
+                 { type: 'input_trigger', label: 'Workflow Input Trigger', desc: 'Start with defined input variables' },
+                 { type: 'execute_workflow_trigger', label: 'Execute Workflow (trigger)', desc: 'Triggered by another workflow' },
+               ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
               .map(node => (
                 <button
                   key={node.type}
@@ -3333,14 +3344,30 @@ Respond ONLY in JSON matching this format:
             {/* 2. Apps */}
             <div className="space-y-1.5">
               <h5 className="text-[9px] text-[#ffad33] uppercase tracking-widest font-bold">// Integration Apps</h5>
-               {[
-                 { type: 'http', label: 'HTTP Request', desc: 'Send HTTP requests to external APIs and services' },
-                 { type: 'slack', label: 'Slack Sender', desc: 'Post payloads or errors directly to workspace' },
-                 { type: 'gmail', label: 'Gmail Dispatcher', desc: 'Auto-send summary alerts or notifications' },
-                 { type: 'github', label: 'GitHub Sync', desc: 'Sync bug issues from repository events' },
-                 { type: 'document', label: 'Document Manager', desc: 'Read and write files, documents and knowledge bases' },
-                 { type: 'utilities', label: 'Utility Toolbox', desc: 'General purpose string, date and data manipulation' },
-               ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
+                {[
+                  { type: 'http', label: 'HTTP Request', desc: 'Send HTTP requests to external APIs and services' },
+                  { type: 'slack', label: 'Slack Sender', desc: 'Post payloads or errors directly to workspace' },
+                  { type: 'gmail', label: 'Gmail Dispatcher', desc: 'Auto-send summary alerts or notifications' },
+                  { type: 'github', label: 'GitHub Sync', desc: 'Sync bug issues from repository events' },
+                  { type: 'document', label: 'Document Manager', desc: 'Read and write files, documents and knowledge bases' },
+                  { type: 'utilities', label: 'Utility Toolbox', desc: 'General purpose string, date and data manipulation' },
+                  { type: 'bitly', label: 'Bitly App', desc: 'Shorten URLs via Bitly' },
+                  { type: 'bluesky', label: 'Bluesky App', desc: 'Post to Bluesky' },
+                  { type: 'dropbox', label: 'Dropbox App', desc: 'Manage Dropbox files' },
+                  { type: 'elevenlabs', label: 'ElevenLabs App', desc: 'Text-to-speech generation' },
+                  { type: 'gmail_app', label: 'Gmail App', desc: 'Advanced Gmail operations' },
+                  { type: 'gmail_trigger_app', label: 'Gmail Trigger App', desc: 'Gmail specific event triggers' },
+                  { type: 'calendar_app', label: 'Google Calendar App', desc: 'Manage calendar events' },
+                  { type: 'docs_app', label: 'Google Docs App', desc: 'Manage Google Documents' },
+                  { type: 'sheets_app', label: 'Google Sheets App', desc: 'Manage Google Sheets' },
+                  { type: 'sheets_trigger_app', label: 'Google Sheets Trigger App', desc: 'Sheet specific event triggers' },
+                  { type: 'perplexity', label: 'Perplexity App', desc: 'AI-powered search' },
+                  { type: 'pushbullet', label: 'Pushbullet App', desc: 'Send push notifications' },
+                  { type: 'reddit', label: 'Reddit App', desc: 'Interact with Reddit' },
+                  { type: 'rss_read', label: 'RSS Read', desc: 'Fetch RSS feed content' },
+                  { type: 'x_twitter', label: 'X (Twitter)', desc: 'Post to X' },
+                  { type: 'youtube', label: 'YouTube App', desc: 'Manage YouTube content' },
+                ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
               .map(node => (
                 <button
                   key={node.type}
@@ -3359,20 +3386,40 @@ Respond ONLY in JSON matching this format:
             {/* 3. Core Logic */}
             <div className="space-y-1.5">
               <h5 className="text-[9px] text-[#00e5a0] uppercase tracking-widest font-bold">// Core logic</h5>
-               {[
-                 { type: 'code', label: 'JS Code Engine', desc: 'Sandbox runtime to manipulate JSON logs' },
-                 { type: 'if', label: 'IF Condition', desc: 'Branch workflow: True/False based on condition' },
-                 { type: 'switch', label: 'Switch', desc: 'Multi-way branching with multiple case values' },
-                 { type: 'loop_for', label: 'Loop (For)', desc: 'Iterate over an array of items, executing downstream per item' },
-                 { type: 'loop_while', label: 'Loop (While)', desc: 'Repeat downstream execution while condition is true' },
-                 { type: 'filter', label: 'Data Filter', desc: 'Branch execution path based on JSON schema variables' },
-                 { type: 'merge', label: 'Merge', desc: 'Combine multiple upstream inputs into one (array/object/text)' },
-                 { type: 'split', label: 'Split', desc: 'Split array data into individual items for downstream' },
-                 { type: 'router', label: 'Variable Router', desc: 'Directs outputs depending on server status triggers' },
+                {[
+                  { type: 'code', label: 'JS Code Engine', desc: 'Sandbox runtime to manipulate JSON logs' },
+                  { type: 'if', label: 'IF Condition', desc: 'Branch workflow: True/False based on condition' },
+                  { type: 'switch', label: 'Switch', desc: 'Multi-way branching with multiple case values' },
+                  { type: 'loop_for', label: 'Loop (For)', desc: 'Iterate over an array of items, executing downstream per item' },
+                  { type: 'loop_while', label: 'Loop (While)', desc: 'Repeat downstream execution while condition is true' },
+                  { type: 'filter', label: 'Data Filter', desc: 'Branch execution path based on JSON schema variables' },
+                  { type: 'merge', label: 'Merge', desc: 'Combine multiple upstream inputs into one (array/object/text)' },
+                  { type: 'split', label: 'Split', desc: 'Split array data into individual items for downstream' },
+                  { type: 'router', label: 'Variable Router', desc: 'Directs outputs depending on server status triggers' },
                   { type: 'workflow_tools', label: 'Workflow Toolset', desc: 'Special tools for graph manipulation and routing' },
                   { type: 'custom_tool', label: 'Custom Tool Node', desc: 'User-defined tool implementation' },
                   { type: 'confessionsAi', label: 'Confessions AI', desc: 'Enforces the AI Constitution and audits priority-based logs' },
-               ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
+                  { type: 'aggregate', label: 'Aggregate', desc: 'Group and summarize multiple items' },
+                  { type: 'convert_to_file', label: 'Convert to File', desc: 'Convert JSON/Text to a downloadable file' },
+                  { type: 'date_time', label: 'Date & Time', desc: 'Format or calculate dates and times' },
+                  { type: 'edit_fields', label: 'Edit Fields (Set)', desc: 'Modify or add fields to the current data' },
+                  { type: 'extract_from_file', label: 'Extract from File', desc: 'Extract structured data from uploaded files' },
+                  { type: 'html_transform', label: 'HTML Transform', desc: 'Parse or generate HTML content' },
+                  { type: 'limit', label: 'Limit', desc: 'Limit the number of items processed' },
+                  { type: 'markdown_transform', label: 'Markdown Transform', desc: 'Convert between Markdown and HTML/Text' },
+                  { type: 'remove_duplicates', label: 'Remove Duplicates', desc: 'Filter out duplicate items based on keys' },
+                  { type: 'rename_keys', label: 'Rename Keys', desc: 'Rename object keys in the data stream' },
+                  { type: 'sort', label: 'Sort', desc: 'Sort items by specific field values' },
+                  { type: 'split_out', label: 'Split Out', desc: 'Convert a list field into multiple items' },
+                  { type: 'summarize', label: 'Summarize', desc: 'Create a summary of the data stream' },
+                  { type: 'execute_command', label: 'Execute Command', desc: 'Run a system shell command' },
+                  { type: 'execute_workflow', label: 'Execute Workflow', desc: 'Call another workflow as a sub-process' },
+                  { type: 'execution_data', label: 'Execution Data', desc: 'Access metadata about the current execution' },
+                  { type: 'ftp', label: 'FTP', desc: 'Transfer files via FTP/SFTP' },
+                  { type: 'replace_me', label: 'Replace Me', desc: 'Placeholder for future logic' },
+                  { type: 'respond_webhook', label: 'Respond to Webhook', desc: 'Send a response back to the webhook caller' },
+                  { type: 'wait', label: 'Wait', desc: 'Pause execution for a specific duration' },
+                ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
               .map(node => (
                 <button
                   key={node.type}
@@ -3391,13 +3438,21 @@ Respond ONLY in JSON matching this format:
             {/* 4. AI Engine */}
             <div className="space-y-1.5">
               <h5 className="text-[9px] text-[#b04cff] uppercase tracking-widest font-bold">// AI Engine (NEXUS)</h5>
-               {[
-                 { type: 'agent', label: 'Nexus AI Agent', desc: 'Launches custom system prompt and telemetry rules via Gemini model' },
-                 { type: 'prompt', label: 'Prompt Template', desc: 'Injects context logs dynamically into styled prompts' },
-                 { type: 'rag', label: 'Vector Search DB', desc: 'Queries vector index clusters for previous similar bugs' },
-                 { type: 'core_brain', label: 'Core Brain Agent', desc: 'Advanced cognitive agent with recursive reasoning' },
-                 { type: 'llm_chain', label: 'Basic LLM Chain', desc: 'Sequential chain of LLM prompt executions' },
-               ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
+                {[
+                  { type: 'agent', label: 'Nexus AI Agent', desc: 'Launches custom system prompt and telemetry rules via Gemini model' },
+                  { type: 'prompt', label: 'Prompt Template', desc: 'Injects context logs dynamically into styled prompts' },
+                  { type: 'rag', label: 'Vector Search DB', desc: 'Queries vector index clusters for previous similar bugs' },
+                  { type: 'core_brain', label: 'Core Brain Agent', desc: 'Advanced cognitive agent with recursive reasoning' },
+                  { type: 'llm_chain', label: 'Basic LLM Chain', desc: 'Sequential chain of LLM prompt executions' },
+                  { type: 'chat_memory_manager', label: 'Chat Memory Manager', desc: 'Manages conversational state and memory windows' },
+                  { type: 'info_extractor', label: 'Information Extractor', desc: 'Extracts structured data from unstructured text' },
+                  { type: 'openai_message_model', label: 'OpenAI Message Model', desc: 'Standardized OpenAI message format handler' },
+                  { type: 'qa_chain', label: 'Question and Answer Chain', desc: 'Specialized chain for Q&A tasks' },
+                  { type: 'sentiment_analysis', label: 'Sentiment Analysis', desc: 'Analyzes emotional tone of input text' },
+                  { type: 'summarization_chain', label: 'Summarization Chain', desc: 'Condenses long text into a brief summary' },
+                  { type: 'text_classifier', label: 'Text Classifier', desc: 'Categorizes text into predefined labels' },
+                  { type: 'ai_transform', label: 'AI Transform', desc: 'AI-powered data transformation and cleanup' },
+                ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
               .map(node => (
                 <button
                   key={node.type}
@@ -3439,27 +3494,118 @@ Respond ONLY in JSON matching this format:
                ))}
              </div>
              
-             {/* 6. Storage & State (Redis, Supabase, Buffer) */}
-             <div className="space-y-1.5">
-               <h5 className="text-[9px] text-[#38c8ff] uppercase tracking-widest font-bold">// Storage & State</h5>
-               {[
-                 { type: 'window_buffer', label: 'Window Buffer Memory', desc: 'Short-term conversational windowed memory buffer' },
-                 { type: 'vector_store', label: 'Supabase/Redis Vector Store', desc: 'Persistent high-dimensional vector embeddings storage' },
-               ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
-               .map(node => (
-                 <button
-                   key={node.type}
-                   onClick={() => handleAddNodeType(node.type, 'storage', node.label)}
-                   className="w-full text-left p-2.5 bg-[#141624]/40 hover:bg-[#1f2235]/40 border border-[#1f2235]/30 rounded transition-all text-[11px] group"
-                 >
-                   <div className="font-extrabold text-[#e8eaf6] group-hover:text-[#38c8ff] flex items-center gap-1.5">
-                     <Database className="w-3.5 h-3.5 text-[#38c8ff]" />
-                     <span>{node.label}</span>
-                   </div>
-                   <div className="text-[8px] text-[#4a5068] mt-1 leading-relaxed">{node.desc}</div>
-                 </button>
-               ))}
-             </div>
+              {/* 6. AI Models & Embeddings */}
+              <div className="space-y-1.5">
+                <h5 className="text-[9px] text-[#ff4560] uppercase tracking-widest font-bold">// AI Models & Embeddings</h5>
+                {[
+                  { type: 'openai_chat_model', label: 'OpenAI Chat Model', desc: 'GPT-4o and GPT-3.5 Turbo' },
+                  { type: 'anthropic_chat_model', label: 'Anthropic Chat Model', desc: 'Claude 3.5 Sonnet and Opus' },
+                  { type: 'gemini_chat_model', label: 'Google Gemini Chat Model', desc: 'Gemini Pro and Flash' },
+                  { type: 'embeddings_openai', label: 'Embeddings OpenAI', desc: 'Text embeddings via OpenAI' },
+                  { type: 'embeddings_gemini', label: 'Embeddings Google Gemini', desc: 'Text embeddings via Google' },
+                ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
+                .map(node => (
+                  <button
+                    key={node.type}
+                    onClick={() => handleAddNodeType(node.type, 'ai_models', node.label)}
+                    className="w-full text-left p-2.5 bg-[#141624]/40 hover:bg-[#1f2235]/40 border border-[#1f2235]/30 rounded transition-all text-[11px] group"
+                  >
+                    <div className="font-extrabold text-[#e8eaf6] group-hover:text-[#b8ff57] flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-[#ff4560]" />
+                      <span>{node.label}</span>
+                    </div>
+                    <div className="text-[8px] text-[#4a5068] mt-1 leading-relaxed">{node.desc}</div>
+                  </button>
+                ))}
+              </div>
+
+              {/* 7. Output Parsers */}
+              <div className="space-y-1.5">
+                <h5 className="text-[9px] text-[#b8ff57] uppercase tracking-widest font-bold">// Output Parsers</h5>
+                {[
+                  { type: 'item_list_parser', label: 'Item List Output Parser', desc: 'Parse LLM response as a clean list' },
+                  { type: 'structured_parser', label: 'Structured Output Parser', desc: 'Enforce JSON schema for LLM outputs' },
+                  { type: 'autofix_parser', label: 'Auto-fixing Output Parser', desc: 'Automatically repair malformed LLM JSON' },
+                ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
+                .map(node => (
+                  <button
+                    key={node.type}
+                    onClick={() => handleAddNodeType(node.type, 'output_parsers', node.label)}
+                    className="w-full text-left p-2.5 bg-[#141624]/40 hover:bg-[#1f2235]/40 border border-[#1f2235]/30 rounded transition-all text-[11px] group"
+                  >
+                    <div className="font-extrabold text-[#e8eaf6] group-hover:text-[#b8ff57] flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-[#b8ff57]" />
+                      <span>{node.label}</span>
+                    </div>
+                    <div className="text-[8px] text-[#4a5068] mt-1 leading-relaxed">{node.desc}</div>
+                  </button>
+                ))}
+              </div>
+
+              {/* 8. Tools (for AI Agents) */}
+              <div className="space-y-1.5">
+                <h5 className="text-[9px] text-[#ffad33] uppercase tracking-widest font-bold">// AI Agent Tools</h5>
+                {[
+                  { type: 'calculator', label: 'Calculator', desc: 'Precision math tool for agents' },
+                  { type: 'n8n_tool', label: 'Call n8n Workflow Tool', desc: 'Execute external n8n automation' },
+                  { type: 'code_tool', label: 'Code Tool', desc: 'Run dynamic JS code in tool sandbox' },
+                  { type: 'gmail_tool', label: 'Gmail Tool App', desc: 'Read/send emails via agent' },
+                  { type: 'calendar_tool', label: 'Google Calendar Tool App', desc: 'Manage calendar via agent' },
+                  { type: 'docs_tool', label: 'Google Docs Tool App', desc: 'Edit documents via agent' },
+                  { type: 'sheets_tool', label: 'Google Sheets Tool App', desc: 'Manage spreadsheets via agent' },
+                  { type: 'http_tool', label: 'HTTP Request Tool', desc: 'Call any API via agent' },
+                  { type: 'mcp_client', label: 'MCP Client', desc: 'Model Context Protocol client' },
+                  { type: 'postgres_tool', label: 'Postgres (tool)', desc: 'SQL query tool for agents' },
+                  { type: 'redis_tool', label: 'Redis (tool)', desc: 'KV store tool for agents' },
+                  { type: 'send_email', label: 'Send Email', desc: 'Direct SMTP email sender' },
+                  { type: 'serpapi', label: 'SerpAPI', desc: 'Real-time Google search for agents' },
+                  { type: 'wikipedia', label: 'Wikipedia', desc: 'Encyclopedia lookup tool' },
+                  { type: 'wolfram_alpha', label: 'Wolfram Alpha', desc: 'Computational knowledge engine' },
+                ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
+                .map(node => (
+                  <button
+                    key={node.type}
+                    onClick={() => handleAddNodeType(node.type, 'ai_tools', node.label)}
+                    className="w-full text-left p-2.5 bg-[#141624]/40 hover:bg-[#1f2235]/40 border border-[#1f2235]/30 rounded transition-all text-[11px] group"
+                  >
+                    <div className="font-extrabold text-[#e8eaf6] group-hover:text-[#b8ff57] flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-[#ffad33]" />
+                      <span>{node.label}</span>
+                    </div>
+                    <div className="text-[8px] text-[#4a5068] mt-1 leading-relaxed">{node.desc}</div>
+                  </button>
+                ))}
+              </div>
+
+              {/* 9. Storage & State (Redis, Supabase, Buffer) */}
+              <div className="space-y-1.5">
+                <h5 className="text-[9px] text-[#38c8ff] uppercase tracking-widest font-bold">// Storage & State</h5>
+                {[
+                  { type: 'window_buffer', label: 'Window Buffer Memory', desc: 'Short-term conversational windowed memory buffer' },
+                  { type: 'vector_store', label: 'Supabase/Redis Vector Store', desc: 'Persistent high-dimensional vector embeddings storage' },
+                  { type: 'postgres_chat_memory', label: 'Postgres Chat Memory', desc: 'Persistent chat history in PostgreSQL' },
+                  { type: 'redis_chat_memory', label: 'Redis Chat Memory', desc: 'Fast, ephemeral chat history in Redis' },
+                  { type: 'in_memory_vector', label: 'In-Memory Vector Store', desc: 'Temporary vector storage for fast prototyping' },
+                  { type: 'pinecone_vector', label: 'Pinecone Vector Store', desc: 'Managed vector database for large scale RAG' },
+                  { type: 'pgvector_store', label: 'Postgres PGVector Store', desc: 'Vector storage using pgvector extension' },
+                  { type: 'data_loader', label: 'Default Data Loader', desc: 'Loads documents into vector stores' },
+                  { type: 'vector_qa', label: 'Answer Questions With Vector Store', desc: 'Direct QA over vector embeddings' },
+                ].filter(n => n.label.toLowerCase().includes(addPanelSearch.toLowerCase()))
+                .map(node => (
+                  <button
+                    key={node.type}
+                    onClick={() => handleAddNodeType(node.type, 'storage', node.label)}
+                    className="w-full text-left p-2.5 bg-[#141624]/40 hover:bg-[#1f2235]/40 border border-[#1f2235]/30 rounded transition-all text-[11px] group"
+                  >
+                    <div className="font-extrabold text-[#e8eaf6] group-hover:text-[#38c8ff] flex items-center gap-1.5">
+                      <Database className="w-3.5 h-3.5 text-[#38c8ff]" />
+                      <span>{node.label}</span>
+                    </div>
+                    <div className="text-[8px] text-[#4a5068] mt-1 leading-relaxed">{node.desc}</div>
+                  </button>
+                ))}
+              </div>
+
 
 
           </div>
