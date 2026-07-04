@@ -2717,7 +2717,6 @@ Respond ONLY in JSON matching this format:
             {/* Canvas Wrapper */}
             <div
               ref={canvasWrapperRef}
-              onWheel={handleWheel}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
