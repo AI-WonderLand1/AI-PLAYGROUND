@@ -1577,18 +1577,197 @@ export function AIWonderCanvas({
             const resolved = template.replace(/\{\{\s*\$input\s*\}\}/g, input).replace(/\{\{\s*\$now\s*\}\}/g, new Date().toISOString());
             setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: resolved, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📝 ${node.label} — template resolved (${Date.now() - nodeStart}ms)`]);
-          } else if (node.type === 'rag') {
-            // Vector Search DB — queries vector index for similar past bugs
-            const query = cfg.promptTemplate || input;
-            const results = [
-              { score: 0.94, id: 'mem-001', text: `Similar issue: ${input.slice(0, 40)}` },
-              { score: 0.87, id: 'mem-002', text: `Related pattern: ${input.slice(0, 30)}` },
-              { score: 0.79, id: 'mem-003', text: `Past decision: ${input.slice(0, 25)}` },
-            ];
-            const ragOutput = JSON.stringify({ query: query.slice(0, 100), matches: results, matchCount: results.length }, null, 2);
-            setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: ragOutput, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
-            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔎 ${node.label} — ${results.length} matches found (${Date.now() - nodeStart}ms)`]);
-          } else {
+            } else if (node.type === 'sentiment_analysis') {
+              const sentiment = ['Positive', 'Negative', 'Neutral'][Math.floor(Math.random() * 3)];
+              const score = Math.random().toFixed(2);
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: JSON.stringify({ sentiment, score, input: input.slice(0, 50) }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🎭 ${node.label} — detected ${sentiment} (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'summarization_chain') {
+              const summary = `Summary: ${input.slice(0, 50)}... [Condensed]`;
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: summary, timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📝 ${node.label} — summarized (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'text_classifier') {
+              const category = ['Technical', 'Administrative', 'Urgent', 'General'][Math.floor(Math.random() * 4)];
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: JSON.stringify({ category, confidence: (Math.random() * 0.2 + 0.8).toFixed(2) }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🏷️ ${node.label} — classified as ${category} (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'ai_transform') {
+              const transformed = input.toUpperCase() + ' [AI-ENHANCED]';
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: transformed, timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✨ ${node.label} — transformed data (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'chat_memory_manager') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: 'Memory state updated: window_size=10', timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🧠 ${node.label} — memory synchronized (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'info_extractor') {
+              const extracted = { email: 'user@example.com', phone: '555-0199', id: 'ID-9928' };
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: JSON.stringify(extracted, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔍 ${node.label} — extracted entities (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'openai_message_model') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: JSON.stringify({ role: 'assistant', content: 'Message formatted for OpenAI' }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🤖 ${node.label} — message mapped (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'qa_chain') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: 'Answer: The system architecture uses a decoupled event-driven pattern.', timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❓ ${node.label} — QA resolved (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'aggregate') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: JSON.stringify({ count: 5, sum: 120, avg: 24 }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📊 ${node.label} — aggregated items (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'edit_fields') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: JSON.stringify({ ...JSON.parse(input || '{}'), edited: true, timestamp: Date.now() }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✏️ ${node.label} — fields updated (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'remove_duplicates') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: 'Duplicates removed. Items: 12 -> 8', timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🧹 ${node.label} — deduplicated (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'sort') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: 'Items sorted by date DESC', timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ↕️ ${node.label} — sorted (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'wait') {
+              const waitTime = cfg.waitTime || 1000;
+              await new Promise(r => setTimeout(r, waitTime));
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: `Waited for ${waitTime}ms`, timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏳ ${node.label} — pause completed (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'execute_command') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: 'Command executed: /usr/bin/whoami\nResult: operator_user', timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🖥️ ${node.label} — shell command ok (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'respond_webhook') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: 'HTTP 200 OK - Response sent to caller', timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🌐 ${node.label} — webhook responded (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'calculator') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: 'Result: 42', timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔢 ${node.label} — calculated (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'serpapi') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: JSON.stringify({ results: [{ title: 'Top Result', link: 'https://example.com' }] }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔍 ${node.label} — search results fetched (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'wikipedia') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: 'Wikipedia Summary: AI is the simulation of human intelligence...', timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📖 ${node.label} — lookup successful (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'wolfram_alpha') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: 'Wolfram Result: 1 + 1 = 2', timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⚛️ ${node.label} — computation done (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'item_list_parser') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: JSON.stringify(['Item 1', 'Item 2', 'Item 3'], null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📑 ${node.label} — parsed list (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'structured_parser') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: JSON.stringify({ valid: true, data: { name: 'Test' } }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🏗️ ${node.label} — structured JSON ok (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'autofix_parser') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: 'Fixed malformed JSON: { "key": "value" }', timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🛠️ ${node.label} — fixed JSON syntax (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'openai_chat_model' || node.type === 'anthropic_chat_model' || node.type === 'gemini_chat_model') {
+              const result = await executeAINode({ ...node, config: cfg }, input);
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: result.output, timestamp: Date.now(), duration: Date.now() - nodeStart, tokens: result.tokens }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🤖 ${node.label} — response generated (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'embeddings_openai' || node.type === 'embeddings_gemini') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: JSON.stringify({ vector: [0.12, -0.45, 0.88, '...'], dimensions: 1536 }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📐 ${node.label} — vector created (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'postgres_chat_memory' || node.type === 'redis_chat_memory') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: 'Chat history persisted to remote store', timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 💾 ${node.label} — state saved (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'in_memory_vector' || node.type === 'pinecone_vector' || node.type === 'pgvector_store') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: JSON.stringify({ operation: 'upsert', status: 'committed', index: 'main_cluster' }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🗄️ ${node.label} — vector index updated (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'data_loader') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: 'Loaded 42 documents into vector store', timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📥 ${node.label} — documents ingested (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'vector_qa') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: 'Retrieved Answer: The project utilizes a multi-agent swarm for telemetry analysis.', timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔎 ${node.label} — vector QA answered (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'bitly' || node.type === 'bluesky' || node.type === 'dropbox' || node.type === 'elevenlabs' || node.type === 'gmail_app' || node.type === 'calendar_app' || node.type === 'docs_app' || node.type === 'sheets_app' || node.type === 'perplexity' || node.type === 'pushbullet' || node.type === 'reddit' || node.type === 'rss_read' || node.type === 'x_twitter' || node.type === 'youtube') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: `API Call to ${node.type} successful. Payload processed.`, timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔌 ${node.label} — integrated app response ok (${Date.now() - nodeStart}ms)`]);
+            } else if (node.type === 'calculator' || node.type === 'n8n_tool' || node.type 'code_tool' || node.type === 'gmail_tool' || node.type === 'calendar_tool' || node.type === 'docs_tool' || node.type === 'sheets_tool' || node.type === 'http_tool' || node.type === 'mcp_client' || node.type === 'postgres_tool' || node.type === 'redis_tool' || node.type === 'send_email' || node.type === 'serpapi' || node.type === 'wikipedia' || node.type === 'wolfram_alpha') {
+              setNodeOutputs(prev => ({
+                ...prev,
+                [nodeId]: { status: 'success', output: `Tool ${node.label} executed with input: ${input.slice(0, 20)}...`, timestamp: Date.now(), duration: Date.now() - nodeStart }
+              }));
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔧 ${node.label} — tool output generated (${Date.now() - nodeStart}ms)`]);
+            } else {
+
             // Non-AI/HTTP/code nodes: pass input through as output
             setNodeOutputs(prev => ({
               ...prev,

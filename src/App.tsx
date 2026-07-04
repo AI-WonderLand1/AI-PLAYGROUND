@@ -10,9 +10,10 @@ import { PresetsView } from './components/PresetsView';
 import { ProvidersView } from './components/ProvidersView';
 import { SettingsView } from './components/SettingsView';
 import { AnalyticsView } from './components/AnalyticsView';
-import { PlaygroundConfig, AIModule, MemoryNode, NexusEvent, ModelName } from './types';
-import { Terminal, Database, ShieldAlert, Search, Globe, Sparkles, MessageSquare, BookOpen, Layers, Settings, AppWindow, Cpu, BarChart3 } from 'lucide-react';
+import { PlaygroundConfig, AIModule, MemoryNode, NexusEvent, ModelName, Session } from './types';
+import { Terminal, Database, ShieldAlert, Search, Globe, Sparkles, MessageSquare, BookOpen, Layers, Settings, AppWindow, Cpu, BarChart3, Lock } from 'lucide-react';
 import { cn } from './utils';
+import { supabase, getSession, signInWithEmail } from './lib/supabase';
 
 const INITIAL_MEMORIES: MemoryNode[] = [
   {
@@ -70,6 +71,8 @@ const INITIAL_EVENTS: NexusEvent[] = [
 ];
 
 export default function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [currentTab, setCurrentTab] = useState<'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'workbench' | 'training' | 'creation' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings'>('models');
   const [modelsCatalogSubView, setModelsCatalogSubView] = useState<'directory' | 'infrastructure'>('directory');
   const [selectedCatalogModelId, setSelectedCatalogModelId] = useState<ModelName>('fugu-ultra');
@@ -79,16 +82,81 @@ export default function App() {
   const [masterKeyShort, setMasterKeyShort] = useState('');
 
   useEffect(() => {
-    let key = localStorage.getItem('wonderland_master_key');
-    if (!key) {
-      const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-      key = 'wl-' + [8, 4, 4, 4, 12].map(len =>
-        Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
-      ).join('-');
-      localStorage.setItem('wonderland_master_key', key);
+    async function initAuth() {
+      const currentSession = await getSession();
+      setSession(currentSession);
+      setAuthLoading(false);
     }
-    setMasterKeyShort(key.slice(0, 14) + '..');
+    initAuth();
   }, []);
+
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
+    const { data, error } = await signInWithEmail(email, password);
+    if (error) {
+      alert(error.message);
+    } else {
+      setSession(data.session);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="h-screen w-full bg-[#0a0a0a] flex items-center justify-center font-mono text-[#b8ff57]">
+        <div className="flex items-center gap-3">
+          <div className="w-4 h-4 bg-[#b8ff57] animate-bounce rounded-full" />
+          <span className="text-xs uppercase tracking-widest">Authenticating...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="h-screen w-full bg-[#0a0a0a] flex items-center justify-center p-6 font-mono">
+        <div className="w-full max-w-sm bg-[#0c0d12] border border-[#1f2235] p-8 rounded-sm shadow-2xl">
+          <div className="flex flex-col items-center mb-8">
+            <div className="w-12 h-12 rounded-md bg-gradient-to-tr from-[#5b5eff] to-[#b8ff57] flex items-center justify-center mb-4">
+              <span className="font-serif italic font-black text-lg text-[#0a0a0a]">W</span>
+            </div>
+            <h2 className="text-sm font-black text-[#E4E3E0] uppercase tracking-widest">Wonderland Access</h2>
+            <p className="text-[10px] text-[#5e6686] mt-1">Enter credentials to initialize orchestration</p>
+          </div>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-[9px] text-[#5e6686] uppercase font-bold block">Email</label>
+              <input 
+                name="email" 
+                type="email" 
+                required 
+                className="w-full bg-[#141414] border border-[#2a2a2a] p-2 text-xs text-white rounded-sm focus:outline-none focus:border-[#5b5eff]"
+                placeholder="operator@wonderland.ai"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] text-[#5e6686] uppercase font-bold block">Password</label>
+              <input 
+                name="password" 
+                type="password" 
+                required 
+                className="w-full bg-[#141414] border border-[#2a2a2a] p-2 text-xs text-white rounded-sm focus:outline-none focus:border-[#5b5eff]"
+                placeholder="••••••••"
+              />
+            </div>
+            <button 
+              type="submit" 
+              className="w-full bg-[#b8ff57] text-black py-2 text-xs font-bold uppercase tracking-wider rounded-sm hover:bg-[#a5e64e] transition-all"
+            >
+              Initialize Session
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
