@@ -5191,19 +5191,6 @@ Respond ONLY in JSON matching this format:
         </div>
       )}
 
-      {/* Right-side execution notifications */}
-      {rightNotification && (
-        <div className="fixed top-8 right-8 z-[100] animate-in fade-in slide-in-from-right-4 duration-300">
-          <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border shadow-2xl font-mono text-xs ${
-            rightNotification.type === 'success' 
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
-              : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-          }`}>
-            {rightNotification.type === 'success' ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-            <span className="font-bold tracking-tight">{rightNotification.message}</span>
-          </div>
-        </div>
-      )}
     </div>
   );
-}
+}}}}}}}}}}}
