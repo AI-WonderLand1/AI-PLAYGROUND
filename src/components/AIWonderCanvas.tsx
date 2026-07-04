@@ -432,23 +432,32 @@ export function AIWonderCanvas({
     setDraggedNodeId(null);
   };
 
-  // Global mouse listeners so dragging/panning continues outside canvas bounds
-  useEffect(() => {
-        const dy = (e.clientY - dragStart.y) / scale;
-        setNodes(prev => prev.map(n => n.id === draggedNodeId ? {
-          ...n,
-          x: Math.round(dragStartNodePos.x + dx),
-          y: Math.round(dragStartNodePos.y + dy)
-        } : n));
-      }
-    };
-    const onUp = () => {
-      setIsPanning(false);
-      setDraggedNodeId(null);
-    };
-    if (isPanning || draggedNodeId) {
-      window.addEventListener('mousemove', onMove);
-      window.addEventListener('mouseup', onUp);
+// Global mouse listeners so dragging/panning continues outside canvas bounds
+   useEffect(() => {
+     if (!isPanning && !draggedNodeId) return;
+
+     const onMove = (e: MouseEvent) => {
+       const dy = (e.clientY - dragStart.y) / scale;
+       setNodes((prev) =>
+         prev.map((n) => (n.id === draggedNodeId ? { ...n, x: Math.round(dragStartNodePos.x + dx), y: Math.round(dragStartNodePos.y + dy) } : n))
+       );
+     };
+
+     const onUp = () => {
+       setIsPanning(false);
+       setDraggedNodeId(null);
+     };
+
+     if (isPanning || draggedNodeId) {
+       window.addEventListener('mousemove', onMove);
+       window.addEventListener('mouseup', onUp);
+     }
+
+     return () => {
+       window.removeEventListener('mousemove', onMove);
+       window.removeEventListener('mouseup', onUp);
+     };
+   }, [isPanning, draggedNodeId, dragStart, scale, dx, dragStartNodePos]);
   // Double click canvas to summon Node Add Panel at specific grid coordinate
   const handleCanvasDoubleClick = (e: React.MouseEvent) => {
     if (currentTab !== 'aiwonder' && currentTab !== 'workbench') return;
