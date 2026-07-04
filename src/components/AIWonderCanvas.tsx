@@ -399,83 +399,41 @@ export function AIWonderCanvas({
       setMemoryFormContent(activeMemoryNode.content);
     }
   }, [activeMemoryNode]);
-
-  // Handle zooming via wheel
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const zoomIntensity = 0.08;
-    const rect = canvasWrapperRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    // Mouse coordinates relative to canvas wrapper
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    // Zoom Math to keep point under cursor
-    const zoomFactor = e.deltaY < 0 ? (1 + zoomIntensity) : (1 - zoomIntensity);
-    const newScale = Math.max(0.1, Math.min(3, scale * zoomFactor));
-
-    const dx = mouseX - panX;
-    const dy = mouseY - panY;
-
-    setPanX(mouseX - dx * (newScale / scale));
-    setPanY(mouseY - dy * (newScale / scale));
-    setScale(newScale);
-  };
-
-  // Canvas Drag/Pan Event handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return; // Left click only
-    // If clicking on node or interface button, don't start panning
-    const target = e.target as HTMLElement;
-    if (target.closest('.node-box') || target.closest('button') || target.closest('input')) return;
-
-    setIsPanning(true);
-    setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    const rect = canvasWrapperRef.current?.getBoundingClientRect();
-    if (rect) {
-      // Calculate cursor position inside canvas coords for line rendering
-      const currentMouseX = (e.clientX - rect.left - panX) / scale;
-      const currentMouseY = (e.clientY - rect.top - panY) / scale;
-      setMousePos({ x: currentMouseX, y: currentMouseY });
-    }
-
-    if (isPanning) {
-      setPanX(e.clientX - panStart.x);
-      setPanY(e.clientY - panStart.y);
-    } else if (draggedNodeId) {
-      const dx = (e.clientX - dragStart.x) / scale;
-      const dy = (e.clientY - dragStart.y) / scale;
-      setNodes(prev => prev.map(n => n.id === draggedNodeId ? {
-        ...n,
-        x: Math.round(dragStartNodePos.x + dx),
-        y: Math.round(dragStartNodePos.y + dy)
-      } : n));
-    }
-  };
-
-  const handleMouseUp = () => {
+  useEffect(() => {
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const zoomIntensity = 0.08;
+      const rect = canvasWrapperRef.current?.getBoundingClientRect();
+      if (!rect) return;
+  
+      // Mouse coordinates relative to canvas wrapper
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+  
+      // Zoom Math to keep point under cursor
+      const zoomFactor = e.deltaY < 0 ? (1 + zoomIntensity) : (1 - zoomIntensity);
+      const newScale = Math.max(0.1, Math.min(3, scale * zoomFactor));
+  
+      const dx = mouseX - panX;
+      const dy = mouseY - panY;
+  
+      setPanX(mouseX - dx * (newScale / scale));
+      setPanY(mouseY - dy * (newScale / scale));
+      setScale(newScale);
+    };
+    const wrapperRef = canvasWrapperRef.current;
+    if (!wrapperRef) return;
+    wrapperRef.addEventListener('wheel', onWheel);
+    return () => {
+      wrapperRef.removeEventListener('wheel', onWheel);
+    };
+  }, [panX, panY, scale]);
     setIsPanning(false);
     setDraggedNodeId(null);
   };
 
   // Global mouse listeners so dragging/panning continues outside canvas bounds
   useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      const rect = canvasWrapperRef.current?.getBoundingClientRect();
-      if (rect) {
-        const currentMouseX = (e.clientX - rect.left - panX) / scale;
-        const currentMouseY = (e.clientY - rect.top - panY) / scale;
-        setMousePos({ x: currentMouseX, y: currentMouseY });
-      }
-      if (isPanning) {
-        setPanX(e.clientX - panStart.x);
-        setPanY(e.clientY - panStart.y);
-      } else if (draggedNodeId) {
-        const dx = (e.clientX - dragStart.x) / scale;
         const dy = (e.clientY - dragStart.y) / scale;
         setNodes(prev => prev.map(n => n.id === draggedNodeId ? {
           ...n,
@@ -491,13 +449,6 @@ export function AIWonderCanvas({
     if (isPanning || draggedNodeId) {
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
-      return () => {
-        window.removeEventListener('mousemove', onMove);
-        window.removeEventListener('mouseup', onUp);
-      };
-    }
-  }, [isPanning, draggedNodeId, panStart, dragStart, dragStartNodePos, panX, panY, scale]);
-
   // Double click canvas to summon Node Add Panel at specific grid coordinate
   const handleCanvasDoubleClick = (e: React.MouseEvent) => {
     if (currentTab !== 'aiwonder' && currentTab !== 'workbench') return;
