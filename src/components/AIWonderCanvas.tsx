@@ -1760,7 +1760,7 @@ export function AIWonderCanvas({
                 [nodeId]: { status: 'success', output: `API Call to ${node.type} successful. Payload processed.`, timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔌 ${node.label} — integrated app response ok (${Date.now() - nodeStart}ms)`]);
-            } else if (node.type === 'calculator' || node.type === 'n8n_tool' || node.type 'code_tool' || node.type === 'gmail_tool' || node.type === 'calendar_tool' || node.type === 'docs_tool' || node.type === 'sheets_tool' || node.type === 'http_tool' || node.type === 'mcp_client' || node.type === 'postgres_tool' || node.type === 'redis_tool' || node.type === 'send_email' || node.type === 'serpapi' || node.type === 'wikipedia' || node.type === 'wolfram_alpha') {
+            } else if (node.type === 'calculator' || node.type === 'n8n_tool' || node.type === 'code_tool' || node.type === 'gmail_tool' || node.type === 'calendar_tool' || node.type === 'docs_tool' || node.type === 'sheets_tool' || node.type === 'http_tool' || node.type === 'mcp_client' || node.type === 'postgres_tool' || node.type === 'redis_tool' || node.type === 'send_email' || node.type === 'serpapi' || node.type === 'wikipedia' || node.type === 'wolfram_alpha') {
               setNodeOutputs(prev => ({
                 ...prev,
                 [nodeId]: { status: 'success', output: `Tool ${node.label} executed with input: ${input.slice(0, 20)}...`, timestamp: Date.now(), duration: Date.now() - nodeStart }
