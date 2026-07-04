@@ -90,74 +90,7 @@ export default function App() {
     initAuth();
   }, []);
 
-  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
-    const { data, error } = await signInWithEmail(email, password);
-    if (error) {
-      alert(error.message);
-    } else {
-      setSession(data.session);
-    }
-  };
-
-  if (authLoading) {
-    return (
-      <div className="h-screen w-full bg-[#0a0a0a] flex items-center justify-center font-mono text-[#b8ff57]">
-        <div className="flex items-center gap-3">
-          <div className="w-4 h-4 bg-[#b8ff57] animate-bounce rounded-full" />
-          <span className="text-xs uppercase tracking-widest">Authenticating...</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <div className="h-screen w-full bg-[#0a0a0a] flex items-center justify-center p-6 font-mono">
-        <div className="w-full max-w-sm bg-[#0c0d12] border border-[#1f2235] p-8 rounded-sm shadow-2xl">
-          <div className="flex flex-col items-center mb-8">
-            <div className="w-12 h-12 rounded-md bg-gradient-to-tr from-[#5b5eff] to-[#b8ff57] flex items-center justify-center mb-4">
-              <span className="font-serif italic font-black text-lg text-[#0a0a0a]">W</span>
-            </div>
-            <h2 className="text-sm font-black text-[#E4E3E0] uppercase tracking-widest">Wonderland Access</h2>
-            <p className="text-[10px] text-[#5e6686] mt-1">Enter credentials to initialize orchestration</p>
-          </div>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-[9px] text-[#5e6686] uppercase font-bold block">Email</label>
-              <input 
-                name="email" 
-                type="email" 
-                required 
-                className="w-full bg-[#141414] border border-[#2a2a2a] p-2 text-xs text-white rounded-sm focus:outline-none focus:border-[#5b5eff]"
-                placeholder="operator@wonderland.ai"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[9px] text-[#5e6686] uppercase font-bold block">Password</label>
-              <input 
-                name="password" 
-                type="password" 
-                required 
-                className="w-full bg-[#141414] border border-[#2a2a2a] p-2 text-xs text-white rounded-sm focus:outline-none focus:border-[#5b5eff]"
-                placeholder="••••••••"
-              />
-            </div>
-            <button 
-              type="submit" 
-              className="w-full bg-[#b8ff57] text-black py-2 text-xs font-bold uppercase tracking-wider rounded-sm hover:bg-[#a5e64e] transition-all"
-            >
-              Initialize Session
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
+  // Keyboard shortcut
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -169,20 +102,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const handleSelectCatalogModel = (modelId: ModelName) => {
-    setSelectedCatalogModelId(modelId);
-    // Sync with active module's model configuration!
-    setModules(prev => prev.map(m => m.id === activeModuleId ? {
-      ...m,
-      config: {
-        ...m.config,
-        model: modelId
-      }
-    } : m));
-    // Switch to playground tab
-    setCurrentTab('playground');
-  };
-  
   // Memories State
   const [memories, setMemories] = useState<MemoryNode[]>(() => {
     const saved = localStorage.getItem('playground_memories');
@@ -314,6 +233,87 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('nexus_telemetry_events', JSON.stringify(events));
   }, [events]);
+
+  // Early returns AFTER all hooks
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
+    const { data, error } = await signInWithEmail(email, password);
+    if (error) {
+      alert(error.message);
+    } else {
+      setSession(data.session);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="h-screen w-full bg-[#0a0a0a] flex items-center justify-center font-mono text-[#b8ff57]">
+        <div className="flex items-center gap-3">
+          <div className="w-4 h-4 bg-[#b8ff57] animate-bounce rounded-full" />
+          <span className="text-xs uppercase tracking-widest">Authenticating...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="h-screen w-full bg-[#0a0a0a] flex items-center justify-center p-6 font-mono">
+        <div className="w-full max-w-sm bg-[#0c0d12] border border-[#1f2235] p-8 rounded-sm shadow-2xl">
+          <div className="flex flex-col items-center mb-8">
+            <div className="w-12 h-12 rounded-md bg-gradient-to-tr from-[#5b5eff] to-[#b8ff57] flex items-center justify-center mb-4">
+              <span className="font-serif italic font-black text-lg text-[#0a0a0a]">W</span>
+            </div>
+            <h2 className="text-sm font-black text-[#E4E3E0] uppercase tracking-widest">Wonderland Access</h2>
+            <p className="text-[10px] text-[#5e6686] mt-1">Enter credentials to initialize orchestration</p>
+          </div>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-[9px] text-[#5e6686] uppercase font-bold block">Email</label>
+              <input 
+                name="email" 
+                type="email" 
+                required 
+                className="w-full bg-[#141414] border border-[#2a2a2a] p-2 text-xs text-white rounded-sm focus:outline-none focus:border-[#5b5eff]"
+                placeholder="operator@wonderland.ai"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] text-[#5e6686] uppercase font-bold block">Password</label>
+              <input 
+                name="password" 
+                type="password" 
+                required 
+                className="w-full bg-[#141414] border border-[#2a2a2a] p-2 text-xs text-white rounded-sm focus:outline-none focus:border-[#5b5eff]"
+                placeholder="••••••••"
+              />
+            </div>
+            <button 
+              type="submit" 
+              className="w-full bg-[#b8ff57] text-black py-2 text-xs font-bold uppercase tracking-wider rounded-sm hover:bg-[#a5e64e] transition-all"
+            >
+              Initialize Session
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  const handleSelectCatalogModel = (modelId: ModelName) => {
+    setSelectedCatalogModelId(modelId);
+    setModules(prev => prev.map(m => m.id === activeModuleId ? {
+      ...m,
+      config: {
+        ...m.config,
+        model: modelId
+      }
+    } : m));
+    setCurrentTab('playground');
+  };
 
   const handleAddMemory = (node: Omit<MemoryNode, 'id' | 'ts'> & { id?: string }) => {
     if (node.id) {
