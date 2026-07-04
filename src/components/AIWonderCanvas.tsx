@@ -1571,13 +1571,13 @@ export function AIWonderCanvas({
             const routeOutput = JSON.stringify({ routed: true, route: routeKey, destination: `branch_${routeKey.toLowerCase().replace(/[^a-z0-9]/g, '_')}`, input: input.slice(0, 100) }, null, 2);
             setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: routeOutput, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔀 ${node.label} — routed to ${routeKey} (${Date.now() - nodeStart}ms)`]);
-          } else if (node.type === 'prompt') {
-            // Prompt Template — resolves template expressions and injects context
-            const template = cfg.promptTemplate || '{{ $input }}';
-            const resolved = template.replace(/\{\{\s*\$input\s*\}\}/g, input).replace(/\{\{\s*\$now\s*\}\}/g, new Date().toISOString());
-            setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: resolved, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
-            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📝 ${node.label} — template resolved (${Date.now() - nodeStart}ms)`]);
-            } else if (node.type === 'sentiment_analysis') {
+           } else if (node.type === 'prompt') {
+             // Prompt Template — resolves template expressions and injects context
+             const template = cfg.promptTemplate || '{{ $input }}';
+             const resolved = template.replace(/\{\{\s*\$input\s*\}\}/g, input).replace(/\{\{\s*\$now\s*\}\}/g, new Date().toISOString());
+             setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: resolved, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
+             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📝 ${node.label} — template resolved (${Date.now() - nodeStart}ms)`]);
+           } else if (node.type === 'sentiment_analysis') {
               const sentiment = ['Positive', 'Negative', 'Neutral'][Math.floor(Math.random() * 3)];
               const score = Math.random().toFixed(2);
               setNodeOutputs(prev => ({
