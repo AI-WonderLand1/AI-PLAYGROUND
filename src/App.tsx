@@ -73,7 +73,7 @@ const INITIAL_EVENTS: NexusEvent[] = [
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [currentTab, setCurrentTab] = useState<'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'workbench' | 'training' | 'creation' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings'>('models');
+  const [currentTab, setCurrentTab] = useState<'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'training' | 'creation' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings'>('models');
   const [modelsCatalogSubView, setModelsCatalogSubView] = useState<'directory' | 'infrastructure'>('directory');
   const [selectedCatalogModelId, setSelectedCatalogModelId] = useState<ModelName>('fugu-ultra');
   const [topSearch, setTopSearch] = useState('');
@@ -433,7 +433,6 @@ export default function App() {
             { id: 'playground', label: 'Fusion', activeOn: [] as string[] },
             { id: 'playground', label: 'Chat', activeOn: ['playground'] },
               { id: 'aiwonder', label: 'AI-Wonder', activeOn: ['aiwonder'] },
-             { id: 'workbench', label: 'Workbench', activeOn: ['workbench'] },
              { id: 'docs', label: 'Docs', activeOn: ['docs'] },
             { id: 'activity', label: 'Activity', activeOn: ['activity'] },
             { id: 'analytics', label: 'Analytics', activeOn: ['analytics'] },
@@ -525,7 +524,7 @@ export default function App() {
         )}
 
         {/* AI-WONDER Canvas Orchestrator View */}
-        {(currentTab === 'aiwonder' || currentTab === 'workbench' || currentTab === 'training' || currentTab === 'creation') && (
+        {(currentTab === 'aiwonder' || currentTab === 'training' || currentTab === 'creation') && (
           <AIWonderCanvas
             memories={memories}
             events={events}

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Play, Save, Share2, MoreHorizontal, Clock, Plus, Search, 
+  Play, Save, Share2, MoreHorizontal, Clock, Search, 
   Trash2, X, ToggleLeft, ToggleRight, Database, ShieldAlert, 
    Zap, Cpu, Code, HelpCircle, Sparkles, Info, AlertTriangle, AlertCircle, 
 
@@ -44,8 +44,8 @@ interface AIWonderCanvasProps {
   onImportMemories: (imported: MemoryNode[]) => void;
   onClearEvents: () => void;
   onDismissEvent: (id: string) => void;
-   currentTab?: 'aiwonder' | 'workbench' | 'training' | 'creation';
-  onTabChange?: (tab: 'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'workbench' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings') => void;
+   currentTab?: 'aiwonder' | 'training' | 'creation';
+  onTabChange?: (tab: 'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings') => void;
 }
 
 // Helper: convert schedule interval string to milliseconds
@@ -494,7 +494,7 @@ export function AIWonderCanvas({
 
   // Double click canvas to summon Node Add Panel at specific grid coordinate
   const handleCanvasDoubleClick = (e: React.MouseEvent) => {
-    if (currentTab !== 'aiwonder' && currentTab !== 'workbench') return;
+    if (currentTab !== 'aiwonder') return;
     const target = e.target as HTMLElement;
     if (target.closest('.node-box') || target.closest('button') || target.closest('input')) return;
 
@@ -511,7 +511,7 @@ export function AIWonderCanvas({
    // Handle starting connection
    const handleStartConnection = (nodeId: string, e: React.MouseEvent) => {
      e.stopPropagation();
-     if (currentTab === 'training' || (currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'training')) return;
+     if (currentTab === 'training' || (isSubDrawerOpen && workbenchMode === "training")) return;
      setConnectingPin({ nodeId, type: 'output' });
    };
 
@@ -551,7 +551,7 @@ export function AIWonderCanvas({
   // Drag handles for node
    const handleNodeDragStart = (node: WorkflowNode, e: React.MouseEvent) => {
      e.stopPropagation();
-     if (currentTab === 'training' || (currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'training')) return;
+     if (currentTab === 'training' || (isSubDrawerOpen && workbenchMode === "training")) return;
      if (e.button !== 0) return;
      setDraggedNodeId(node.id);
      setDragStart({ x: e.clientX, y: e.clientY });
@@ -2582,16 +2582,16 @@ Respond ONLY in JSON matching this format:
           {/* Left info */}
           <div className="flex items-center gap-3">
             <div className="bg-[#5b5eff]/10 p-1.5 border border-[#5b5eff]/20 rounded-sm">
-              {currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'training' ? (
+              { isSubDrawerOpen && workbenchMode === 'training' ? (
                 <Terminal className="w-4 h-4 text-[#b8ff57]" />
-              ) : currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'creation' ? (
+              ) : isSubDrawerOpen && workbenchMode === 'creation' ? (
                 <Sparkles className="w-4 h-4 text-[#b04cff]" />
               ) : (
                 <Layers className="w-4 h-4 text-[#5b5eff]" />
               )}
             </div>
             <div>
-              {currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'training' ? (
+              { isSubDrawerOpen && workbenchMode === 'training' ? (
                 <>
                   <h2 className="text-xs font-bold tracking-wider uppercase text-[#b8ff57]">
                     Knowledge Training Sets
@@ -2600,7 +2600,7 @@ Respond ONLY in JSON matching this format:
                     Select nodes on the canvas below to include in your training set
                   </div>
                 </>
-              ) : currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'creation' ? (
+              ) : isSubDrawerOpen && workbenchMode === 'creation' ? (
                 <>
                   <h2 className="text-xs font-bold tracking-wider uppercase text-[#b04cff]">
                     Nexus Agent Spark Genesis
@@ -2630,33 +2630,28 @@ Respond ONLY in JSON matching this format:
                   <span className="text-[8px] bg-slate-900 px-1 py-0.5 text-[#5e6686] uppercase border border-[#1f2235] rounded-sm select-none">Double-click to edit</span>
                 </div>
               )}
-              {(currentTab === 'aiwonder' || currentTab === 'workbench') && (
-                <div className="text-[8px] text-[#4a5068] tracking-widest leading-none mt-1">
-                  Node Graph Orchestrator // Last modified: Just now
-                </div>
-              )}
+              <div className="text-[8px] text-[#4a5068] tracking-widest leading-none mt-1">
+                Node Graph Orchestrator // Last modified: Just now
+              </div>
             </div>
           </div>
 
           {/* Right aligned actions bar */}
            <div className="flex items-center gap-3">
-             {currentTab === 'workbench' && (
-               <button
-                 onClick={() => setIsSubDrawerOpen(!isSubDrawerOpen)}
-                 className={cn(
-                   "p-2 rounded-md transition-all border",
-                   isSubDrawerOpen 
-                     ? "bg-[#b8ff57]/10 border-[#b8ff57] text-[#b8ff57]" 
-                     : "bg-[#141624] border-[#1f2235] text-[#5e6686] hover:text-[#e8eaf6]"
-                 )}
-                 title="Toggle Workbench Sub-Drawer"
-               >
-                 {isSubDrawerOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-               </button>
-             )}
-             {currentTab === 'aiwonder' || currentTab === 'workbench' ? (
+              <button
+                onClick={() => setIsSubDrawerOpen(!isSubDrawerOpen)}
+                className={cn(
+                  "p-2 rounded-md transition-all border",
+                  isSubDrawerOpen 
+                    ? "bg-[#b8ff57]/10 border-[#b8ff57] text-[#b8ff57]" 
+                    : "bg-[#141624] border-[#1f2235] text-[#5e6686] hover:text-[#e8eaf6]"
+                )}
+                title="Toggle Sub-Drawer"
+              >
+                {isSubDrawerOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              </button>
+             <>
 
-              <>
                 {/* Clean Up / Auto-Layout button */}
                 <button
                   onClick={handleAutoLayout}
@@ -2737,11 +2732,6 @@ Respond ONLY in JSON matching this format:
                   <MoreHorizontal className="w-3.5 h-3.5" />
                 </button>
               </>
-             ) : (
-               <div className="flex items-center gap-2">
-                 <span className="text-[10px] text-[#4c5475] font-bold">Ready</span>
-               </div>
-             )}
           </div>
         </div>
 
@@ -2952,7 +2942,7 @@ Respond ONLY in JSON matching this format:
                       )}
                     >
                       {/* Input Pin */}
-                      {node.category !== 'trigger' && !(currentTab === 'training' || (currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'training')) && (
+                      {node.category !== 'trigger' && !(currentTab === 'training' || (isSubDrawerOpen && workbenchMode === "training")) && (
                         <div
                           onClick={(e) => handleConnectTo(node.id, e)}
                           className="absolute left-[-6px] top-[32px] w-3 h-3 rounded-full border border-[#1f2235] bg-[#07080d] hover:bg-[#b8ff57] transition-all flex items-center justify-center cursor-pointer group"
@@ -2972,7 +2962,7 @@ Respond ONLY in JSON matching this format:
                         </div>
 
                         {/* Delete node option */}
-                        {!(currentTab === 'training' || (currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'training')) && (
+                        {!(currentTab === 'training' || (isSubDrawerOpen && workbenchMode === "training")) && (
                           <button
                             onClick={(e) => handleDeleteNode(node.id, e)}
                             className="p-1 hover:bg-red-500/10 text-[#4c5475] hover:text-red-500 rounded transition-colors"
@@ -3023,7 +3013,7 @@ Respond ONLY in JSON matching this format:
                       )}
 
                       {/* Output Pin */}
-                      {!(currentTab === 'training' || (currentTab === 'workbench' && isSubDrawerOpen && workbenchMode === 'training')) && (
+                      {!(currentTab === 'training' || (isSubDrawerOpen && workbenchMode === "training")) && (
                         <div
                           onMouseDown={(e) => handleStartConnection(node.id, e)}
                           className="absolute right-[-6px] top-[32px] w-3 h-3 rounded-full border border-[#1f2235] bg-[#07080d] hover:bg-[#b8ff57] transition-all flex items-center justify-center cursor-pointer group"
@@ -3048,28 +3038,13 @@ Respond ONLY in JSON matching this format:
               <span className="text-[#4c5475]">Double-click empty canvas to add nodes // Double-click nodes to edit</span>
             </div>
 
-             {/* Summon "+" FAB Button on canvas */}
-             {(currentTab === 'aiwonder' || currentTab === 'workbench') && (
-               <button
-                 onClick={() => {
-                   setSpawnCoords(null);
-                   setIsAddPanelOpen(true);
-                 }}
-                 className="absolute right-6 bottom-6 w-10 h-10 rounded-full bg-[#5b5eff] hover:bg-[#4b4edd] text-white flex items-center justify-center shadow-[0_0_15px_rgba(91,94,255,0.4)] hover:scale-105 transition-all z-20"
-                 title="Summon Node Tray"
-               >
-                 <Plus className="w-5 h-5" />
-               </button>
-             )}
-
              {/* W+ FAB (N8n Style) */}
-             {(currentTab === 'aiwonder' || currentTab === 'workbench') && (
 <button
   onClick={() => {
     setSpawnCoords(null);
     setIsAddPanelOpen(true);
   }}
-  className="absolute right-6 top-6 w-12 h-12 rounded-full bg-[#b8ff57] hover:bg-[#a6e64d] text-[#0a0a0a] flex items-center justify-center shadow-[0_0_20px_rgba(184,255,87,0.5)] hover:scale-110 transition-all z-20 group"
+  className="absolute right-6 bottom-6 w-12 h-12 rounded-full bg-[#b8ff57] hover:bg-[#a6e64d] text-[#0a0a0a] flex items-center justify-center shadow-[0_0_20px_rgba(184,255,87,0.5)] hover:scale-110 transition-all z-20 group"
   title="Summon Node Tray"
 >
   <span className="text-2xl font-bold group-hover:scale-110 transition-transform">W+</span>
@@ -3077,15 +3052,14 @@ Respond ONLY in JSON matching this format:
     W+ Add Node
   </div>
 </button>
-             )}
           </div>
 
           {/* WORKBENCH SUB-DRAWER (Unified Train + Create panels) */}
-          {((currentTab === 'workbench' && isSubDrawerOpen) || currentTab === 'training' || currentTab === 'creation') && (
+          {((isSubDrawerOpen) || currentTab === 'training' || currentTab === 'creation') && (
             <div className="w-[360px] border-l border-[#1f2235]/60 bg-[#0a0c14]/95 flex flex-col font-mono z-20 shrink-0 h-full overflow-hidden">
 
-              {/* Sub-drawer Tab Header (only in workbench mode) */}
-              {currentTab === 'workbench' && (
+              {/* Sub-drawer Tab Header */}
+              { (
                 <div className="flex border-b border-[#1f2235]/40 bg-[#0d0f19] shrink-0">
                   <button
                     onClick={() => setWorkbenchMode('training')}
@@ -3111,7 +3085,7 @@ Respond ONLY in JSON matching this format:
               )}
 
               {/* ===== TRAINING SET COMPILER CONTENT ===== */}
-              {((currentTab === 'workbench' && workbenchMode === 'training') || currentTab === 'training') && (
+              {((workbenchMode === "training") || currentTab === 'training') && (
                 <TrainingSetCompiler
                   nodes={nodes}
                   memories={memories}
@@ -3129,7 +3103,7 @@ Respond ONLY in JSON matching this format:
               )}
 
               {/* ===== AGENT SPARK COMPILER / CREATION CONTENT ===== */}
-              {((currentTab === 'workbench' && workbenchMode === 'creation') || currentTab === 'creation') && (
+              {((workbenchMode === "creation") || currentTab === 'creation') && (
                 <AgentCompiler
                   creationAgentName={creationAgentName}
                   setCreationAgentName={setCreationAgentName}
@@ -3155,7 +3129,7 @@ Respond ONLY in JSON matching this format:
         </div>
 
         {/* BOTTOM EXECUTION LOG DRAWER (SEAMLESS TELEMETRY + ACTION RUN HISTORY) */}
-        {(currentTab === 'aiwonder' || currentTab === 'workbench') && isBottomDrawerOpen && (
+        {isBottomDrawerOpen && (
           <div className="h-64 border-t border-[#1f2235]/40 bg-[#07080d] flex flex-col shrink-0 z-10 overflow-hidden relative">
             
             {/* Drawer Tab Header */}
