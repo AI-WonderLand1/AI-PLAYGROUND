@@ -113,121 +113,9 @@ const NEXUS_TYPE_LABELS: Record<string, string> = {
 };
 
 // Default initial nodes
-const INITIAL_NODES: WorkflowNode[] = [
-  {
-    id: 'trigger-1',
-    type: 'webhook',
-    category: 'trigger',
-    label: 'Webhook Trigger',
-    x: 80,
-    y: 220,
-    config: {
-      title: 'Webhook Listener',
-      description: 'Accepts inbound telemetry payloads and triggers workflow sequence',
-      webhookUrl: 'https://api.wonderland.ai/v1/webhooks/active-ingress',
-      mockInputs: { payload: '{"event": "page_view", "url": "/checkout", "status": 200}' }
-    }
-  },
-  {
-    id: 'ai-agent-1',
-    type: 'agent',
-    category: 'ai',
-    label: 'Nexus AI Agent',
-    x: 360,
-    y: 120,
-    config: {
-      title: 'Nexus Agent',
-      description: 'Processes incoming errors and determines if they represent structural regressions',
-      model: 'gemini-3-flash-preview',
-      systemPrompt: 'You are an elite automated telemetry triage agent. Analyze errors and generate detailed Decision/Bug nodes.',
-      temperature: 0.4,
-      topP: 0.9,
-      maxTokens: 1024,
-      mockInputs: { error: 'TypeError: Cannot read properties of undefined (reading "map")' },
-      mockOutputs: {
-        status: 'success',
-        analysis: 'Critical mapping bug identified in checkout component.',
-        suggestedNode: 'bug',
-        severity: 'high'
-      }
-    }
-  },
-  {
-    id: 'rag-1',
-    type: 'rag',
-    category: 'ai',
-    label: 'Vector Search DB',
-    x: 360,
-    y: 320,
-    config: {
-      title: 'RAG Knowledge Finder',
-      description: 'Queries similar past bugs from the vector cluster index',
-      promptTemplate: 'Find previous instances matching: {{error_message}}',
-      mockInputs: { error_message: 'TypeError: Cannot read properties of undefined' },
-      mockOutputs: {
-        matches: [
-          { score: 0.94, id: 'mem-92a', text: 'Checkout map fix deployed last Tuesday' }
-        ]
-      }
-    }
-  },
-  {
-    id: 'memory-decision-1',
-    type: 'decision',
-    category: 'dream_maker',
-    label: 'Decision: Hotfix Trigger',
-    x: 680,
-    y: 100,
-    config: {
-      title: 'Auto-Trigger Hotfix Patch',
-      description: 'Determines whether an automated rollback or cloud patch is needed'
-    },
-    memoryId: 'mem-dec-initial'
-  },
-  {
-    id: 'memory-bug-1',
-    type: 'bug',
-    category: 'dream_maker',
-    label: 'Bug Anomaly',
-    x: 680,
-    y: 300,
-    config: {
-      title: 'TypeError in AppContainer',
-      description: 'Asynchronous state loading delay on map() array render.'
-    },
-    memoryId: 'mem-bug-initial'
-  },
-   {
-     id: 'split-1',
-     type: 'split',
-     category: 'core',
-     label: 'Data Splitter',
-     x: 400,
-     y: 500,
-      config: {
-        splitMode: 'all', // 'first' | 'all'
-      },
-    },
-    {
-      id: 'merge-1',
-      type: 'merge',
-      category: 'core',
-      label: 'Data Merger',
-      x: 600,
-      y: 500,
-      config: {
-        mergeMode: 'array', // 'array' | 'object' | 'text'
-      },
-    },
+const INITIAL_NODES: WorkflowNode[] = [];
 
- ];
-
-const INITIAL_CONNECTIONS: WorkflowConnection[] = [
-  { id: 'conn-1', fromId: 'trigger-1', toId: 'ai-agent-1' },
-  { id: 'conn-2', fromId: 'trigger-1', toId: 'rag-1' },
-  { id: 'conn-3', fromId: 'ai-agent-1', toId: 'memory-decision-1' },
-  { id: 'conn-4', fromId: 'ai-agent-1', toId: 'memory-bug-1' }
-];
+const INITIAL_CONNECTIONS: WorkflowConnection[] = [];
 
 export function AIWonderCanvas({
   memories,
@@ -454,16 +342,45 @@ export function AIWonderCanvas({
     showNotification(`Pasted ${newNodes.length} node(s)`);
   };
 
+  // New empty workflow
+  const handleNewWorkflow = () => {
+    pushHistory();
+    setNodes([]);
+    setConnections([]);
+    setWorkflowTitle('Untitled Workflow');
+    setSelectedNode(null);
+    setSelectedNodeIds(new Set());
+    setExecutionLog([]);
+    showNotification('New empty workflow created');
+  };
+
   // Delete selected nodes
   const handleDeleteSelected = () => {
     const ids = selectedNodeIds.size > 0 ? selectedNodeIds : (selectedNode ? new Set([selectedNode.id]) : new Set());
     if (ids.size === 0) return;
     pushHistory();
+    // Auto-merge: for each deleted node with exactly 1-in/1-out, connect source to target
+    let mergedConnections: WorkflowConnection[] = [];
+    for (const nodeId of ids) {
+      const incoming = connections.filter(c => c.toId === nodeId && !ids.has(c.fromId));
+      const outgoing = connections.filter(c => c.fromId === nodeId && !ids.has(c.toId));
+      if (incoming.length === 1 && outgoing.length === 1) {
+        mergedConnections.push({
+          id: `conn-${Math.random().toString(36).substr(2, 9)}`,
+          fromId: incoming[0].fromId,
+          toId: outgoing[0].toId,
+          fromPort: incoming[0].fromPort,
+        });
+      }
+    }
     setNodes(prev => prev.filter(n => !ids.has(n.id)));
-    setConnections(prev => prev.filter(c => !ids.has(c.fromId) && !ids.has(c.toId)));
+    setConnections(prev => [
+      ...prev.filter(c => !ids.has(c.fromId) && !ids.has(c.toId)),
+      ...mergedConnections,
+    ]);
     setSelectedNodeIds(new Set());
     setSelectedNode(null);
-    showNotification(`Deleted ${ids.size} node(s)`);
+    showNotification(mergedConnections.length ? `Deleted ${ids.size} node(s), wires merged` : `Deleted ${ids.size} node(s)`);
   };
 
   // Select all nodes
@@ -933,9 +850,24 @@ export function AIWonderCanvas({
   const handleDeleteNode = (nodeId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     pushHistory();
+    // Auto-merge: if node has exactly 1 incoming and 1 outgoing, connect them directly
+    const incoming = connections.filter(c => c.toId === nodeId);
+    const outgoing = connections.filter(c => c.fromId === nodeId);
+    let mergedConnections: WorkflowConnection[] = [];
+    if (incoming.length === 1 && outgoing.length === 1) {
+      mergedConnections = [{
+        id: `conn-${Math.random().toString(36).substr(2, 9)}`,
+        fromId: incoming[0].fromId,
+        toId: outgoing[0].toId,
+        fromPort: incoming[0].fromPort,
+      }];
+    }
     setNodes(prev => prev.filter(n => n.id !== nodeId));
-    setConnections(prev => prev.filter(c => c.fromId !== nodeId && c.toId !== nodeId));
-    showNotification('Node deleted');
+    setConnections(prev => [
+      ...prev.filter(c => c.fromId !== nodeId && c.toId !== nodeId),
+      ...mergedConnections,
+    ]);
+    showNotification(mergedConnections.length ? 'Node deleted, wires merged' : 'Node deleted');
     if (selectedNode?.id === nodeId) setSelectedNode(null);
   };
 
@@ -2998,6 +2930,16 @@ Respond ONLY in JSON matching this format:
               </button>
              <>
 
+                {/* New empty workflow */}
+                <button
+                  onClick={handleNewWorkflow}
+                  className="bg-[#141624] hover:bg-[#1c1f32] border border-[#1f2235] text-[#5e6686] hover:text-[#b8ff57] px-3 py-1.5 rounded-sm text-[10px] font-bold uppercase transition-all flex items-center gap-1.5"
+                  title="Create new empty workflow"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>New</span>
+                </button>
+
                 {/* Clean Up / Auto-Layout button */}
                 <button
                   onClick={handleAutoLayout}
@@ -3169,20 +3111,138 @@ Respond ONLY in JSON matching this format:
                            className="transition-all hover:stroke-red-500 hover:stroke-[3px] pointer-events-auto cursor-pointer"
                            onClick={(e) => {
                              e.stopPropagation();
+                             pushHistory();
                              setConnections(prev => prev.filter(c => c.id !== conn.id));
                              showNotification('Connection severed');
                            }}
                          />
-                         {/* Flow direction dot */}
-                        <circle
-                          cx={(x1 + x2) / 2}
-                          cy={(y1 + y2) / 2}
-                          r="3.5"
-                          fill={fromNode.category === 'dream_maker' ? '#0a0a0a' : '#b8ff57'}
-                          stroke={fromNode.category === 'dream_maker' ? '#b8ff57' : '#5b5eff'}
-                          strokeWidth="1.5"
-                          className="animate-pulse"
-                        />
+                         {/* Flow direction dot + Wire action buttons */}
+                        <g className="pointer-events-auto" style={{ cursor: 'default' }}>
+                          {/* Delete wire button (🗑️) */}
+                          <circle
+                            cx={(x1 + x2) / 2 - 14}
+                            cy={(y1 + y2) / 2}
+                            r="9"
+                            fill="#1a1a2e"
+                            stroke="#ff3d6b"
+                            strokeWidth="1.5"
+                            className="opacity-0 hover:opacity-100 transition-opacity cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              pushHistory();
+                              setConnections(prev => prev.filter(c => c.id !== conn.id));
+                              showNotification('Connection deleted');
+                            }}
+                          />
+                          <text
+                            x={(x1 + x2) / 2 - 14}
+                            y={(y1 + y2) / 2 + 4}
+                            textAnchor="middle"
+                            fontSize="10"
+                            className="opacity-0 hover:opacity-100 transition-opacity pointer-events-auto cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              pushHistory();
+                              setConnections(prev => prev.filter(c => c.id !== conn.id));
+                              showNotification('Connection deleted');
+                            }}
+                          >
+                            🗑️
+                          </text>
+                          {/* Add node in wire button (+) */}
+                          <circle
+                            cx={(x1 + x2) / 2 + 14}
+                            cy={(y1 + y2) / 2}
+                            r="9"
+                            fill="#1a1a2e"
+                            stroke="#b8ff57"
+                            strokeWidth="1.5"
+                            className="opacity-0 hover:opacity-100 transition-opacity cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              pushHistory();
+                              const midX = Math.round((fromNode.x + toNode.x) / 2 + 100);
+                              const midY = Math.round((fromNode.y + toNode.y) / 2);
+                              const newId = `node-${Math.random().toString(36).substr(2, 9)}`;
+                              const newNode: WorkflowNode = {
+                                id: newId,
+                                type: 'agent',
+                                category: 'ai',
+                                label: 'New Agent',
+                                x: midX,
+                                y: midY,
+                                config: {
+                                  title: 'New Agent',
+                                  description: 'Inserted agent node',
+                                  model: 'gemini-3-flash-preview',
+                                  systemPrompt: 'You are an AI agent...',
+                                  temperature: 0.7,
+                                  mockInputs: { payload: '{}' },
+                                  mockOutputs: { status: 'success' },
+                                },
+                              };
+                              setNodes(prev => [...prev, newNode]);
+                              setConnections(prev => [
+                                ...prev.filter(c => c.id !== conn.id),
+                                { id: `conn-${Math.random().toString(36).substr(2, 9)}`, fromId: conn.fromId, toId: newId, fromPort: conn.fromPort },
+                                { id: `conn-${Math.random().toString(36).substr(2, 9)}`, fromId: newId, toId: conn.toId },
+                              ]);
+                              showNotification('Node inserted in wire');
+                            }}
+                          />
+                          <text
+                            x={(x1 + x2) / 2 + 14}
+                            y={(y1 + y2) / 2 + 4}
+                            textAnchor="middle"
+                            fontSize="12"
+                            fontWeight="bold"
+                            fill="#b8ff57"
+                            className="opacity-0 hover:opacity-100 transition-opacity pointer-events-auto cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              pushHistory();
+                              const midX = Math.round((fromNode.x + toNode.x) / 2 + 100);
+                              const midY = Math.round((fromNode.y + toNode.y) / 2);
+                              const newId = `node-${Math.random().toString(36).substr(2, 9)}`;
+                              const newNode: WorkflowNode = {
+                                id: newId,
+                                type: 'agent',
+                                category: 'ai',
+                                label: 'New Agent',
+                                x: midX,
+                                y: midY,
+                                config: {
+                                  title: 'New Agent',
+                                  description: 'Inserted agent node',
+                                  model: 'gemini-3-flash-preview',
+                                  systemPrompt: 'You are an AI agent...',
+                                  temperature: 0.7,
+                                  mockInputs: { payload: '{}' },
+                                  mockOutputs: { status: 'success' },
+                                },
+                              };
+                              setNodes(prev => [...prev, newNode]);
+                              setConnections(prev => [
+                                ...prev.filter(c => c.id !== conn.id),
+                                { id: `conn-${Math.random().toString(36).substr(2, 9)}`, fromId: conn.fromId, toId: newId, fromPort: conn.fromPort },
+                                { id: `conn-${Math.random().toString(36).substr(2, 9)}`, fromId: newId, toId: conn.toId },
+                              ]);
+                              showNotification('Node inserted in wire');
+                            }}
+                          >
+                            +
+                          </text>
+                          {/* Subtle flow dot (always visible) */}
+                          <circle
+                            cx={(x1 + x2) / 2}
+                            cy={(y1 + y2) / 2}
+                            r="2.5"
+                            fill={fromNode.category === 'dream_maker' ? '#0a0a0a' : '#b8ff57'}
+                            stroke={fromNode.category === 'dream_maker' ? '#b8ff57' : '#5b5eff'}
+                            strokeWidth="1"
+                            className="animate-pulse pointer-events-none"
+                          />
+                        </g>
                         {/* Port label for IF/Switch nodes */}
                         {conn.fromPort && (() => {
                           let label = '';
@@ -5643,6 +5703,39 @@ Respond ONLY in JSON matching this format:
           >
             <LayoutGrid className="w-3.5 h-3.5" />
             <span>Snap to Grid</span>
+          </button>
+          <div className="border-t border-[#1f2235]/40 my-1" />
+          <button
+            onClick={() => {
+              pushHistory();
+              // Merge: for each node with exactly 1-in/1-out, bypass it
+              let newConns = [...connections];
+              let removed = new Set<string>();
+              for (const node of nodes) {
+                if (removed.has(node.id)) continue;
+                const incoming = newConns.filter(c => c.toId === node.id && !removed.has(c.fromId));
+                const outgoing = newConns.filter(c => c.fromId === node.id && !removed.has(c.toId));
+                if (incoming.length === 1 && outgoing.length === 1) {
+                  newConns = [
+                    ...newConns.filter(c => c.id !== incoming[0].id && c.id !== outgoing[0].id),
+                    { id: `conn-${Math.random().toString(36).substr(2, 9)}`, fromId: incoming[0].fromId, toId: outgoing[0].toId, fromPort: incoming[0].fromPort },
+                  ];
+                  removed.add(node.id);
+                }
+              }
+              if (removed.size > 0) {
+                setNodes(prev => prev.filter(n => !removed.has(n.id)));
+                setConnections(newConns);
+                showNotification(`Merged ${removed.size} pass-through node(s)`);
+              } else {
+                showNotification('No mergeable wires found');
+              }
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-4 py-2 hover:bg-[#b8ff57]/10 text-[#e8eaf6] hover:text-[#b8ff57] flex items-center gap-2.5 transition-colors"
+          >
+            <Link className="w-3.5 h-3.5" />
+            <span>Merge All Wires</span>
           </button>
         </div>
       )}
