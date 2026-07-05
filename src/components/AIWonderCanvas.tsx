@@ -327,7 +327,7 @@ export function AIWonderCanvas({
 
    // Workbench sub-drawer states
    const [isSubDrawerOpen, setIsSubDrawerOpen] = useState(false);
-   const [workbenchMode, setWorkbenchMode] = useState<'training' | 'creation'>('training');
+   const [subDrawerMode, setSubDrawerMode] = useState<'training' | 'creation'>('training');
 
    // Gemini Diagnostic Fix in Bottom Drawer
    const [aiExplanations, setAiExplanations] = useState<Record<string, { explanation: string; fix: string; loading: boolean }>>({});
@@ -511,7 +511,7 @@ export function AIWonderCanvas({
    // Handle starting connection
    const handleStartConnection = (nodeId: string, e: React.MouseEvent) => {
      e.stopPropagation();
-     if (currentTab === 'training' || (isSubDrawerOpen && workbenchMode === "training")) return;
+     if (currentTab === 'training' || (isSubDrawerOpen && subDrawerMode === "training")) return;
      setConnectingPin({ nodeId, type: 'output' });
    };
 
@@ -551,7 +551,7 @@ export function AIWonderCanvas({
   // Drag handles for node
    const handleNodeDragStart = (node: WorkflowNode, e: React.MouseEvent) => {
      e.stopPropagation();
-     if (currentTab === 'training' || (isSubDrawerOpen && workbenchMode === "training")) return;
+     if (currentTab === 'training' || (isSubDrawerOpen && subDrawerMode === "training")) return;
      if (e.button !== 0) return;
      setDraggedNodeId(node.id);
      setDragStart({ x: e.clientX, y: e.clientY });
@@ -2582,16 +2582,16 @@ Respond ONLY in JSON matching this format:
           {/* Left info */}
           <div className="flex items-center gap-3">
             <div className="bg-[#5b5eff]/10 p-1.5 border border-[#5b5eff]/20 rounded-sm">
-              { isSubDrawerOpen && workbenchMode === 'training' ? (
+              { isSubDrawerOpen && subDrawerMode === 'training' ? (
                 <Terminal className="w-4 h-4 text-[#b8ff57]" />
-              ) : isSubDrawerOpen && workbenchMode === 'creation' ? (
+              ) : isSubDrawerOpen && subDrawerMode === 'creation' ? (
                 <Sparkles className="w-4 h-4 text-[#b04cff]" />
               ) : (
                 <Layers className="w-4 h-4 text-[#5b5eff]" />
               )}
             </div>
             <div>
-              { isSubDrawerOpen && workbenchMode === 'training' ? (
+              { isSubDrawerOpen && subDrawerMode === 'training' ? (
                 <>
                   <h2 className="text-xs font-bold tracking-wider uppercase text-[#b8ff57]">
                     Knowledge Training Sets
@@ -2600,7 +2600,7 @@ Respond ONLY in JSON matching this format:
                     Select nodes on the canvas below to include in your training set
                   </div>
                 </>
-              ) : isSubDrawerOpen && workbenchMode === 'creation' ? (
+              ) : isSubDrawerOpen && subDrawerMode === 'creation' ? (
                 <>
                   <h2 className="text-xs font-bold tracking-wider uppercase text-[#b04cff]">
                     Nexus Agent Spark Genesis
@@ -2942,7 +2942,7 @@ Respond ONLY in JSON matching this format:
                       )}
                     >
                       {/* Input Pin */}
-                      {node.category !== 'trigger' && !(currentTab === 'training' || (isSubDrawerOpen && workbenchMode === "training")) && (
+                      {node.category !== 'trigger' && !(currentTab === 'training' || (isSubDrawerOpen && subDrawerMode === "training")) && (
                         <div
                           onClick={(e) => handleConnectTo(node.id, e)}
                           className="absolute left-[-6px] top-[32px] w-3 h-3 rounded-full border border-[#1f2235] bg-[#07080d] hover:bg-[#b8ff57] transition-all flex items-center justify-center cursor-pointer group"
@@ -2962,7 +2962,7 @@ Respond ONLY in JSON matching this format:
                         </div>
 
                         {/* Delete node option */}
-                        {!(currentTab === 'training' || (isSubDrawerOpen && workbenchMode === "training")) && (
+                        {!(currentTab === 'training' || (isSubDrawerOpen && subDrawerMode === "training")) && (
                           <button
                             onClick={(e) => handleDeleteNode(node.id, e)}
                             className="p-1 hover:bg-red-500/10 text-[#4c5475] hover:text-red-500 rounded transition-colors"
@@ -3013,7 +3013,7 @@ Respond ONLY in JSON matching this format:
                       )}
 
                       {/* Output Pin */}
-                      {!(currentTab === 'training' || (isSubDrawerOpen && workbenchMode === "training")) && (
+                      {!(currentTab === 'training' || (isSubDrawerOpen && subDrawerMode === "training")) && (
                         <div
                           onMouseDown={(e) => handleStartConnection(node.id, e)}
                           className="absolute right-[-6px] top-[32px] w-3 h-3 rounded-full border border-[#1f2235] bg-[#07080d] hover:bg-[#b8ff57] transition-all flex items-center justify-center cursor-pointer group"
@@ -3062,20 +3062,20 @@ Respond ONLY in JSON matching this format:
               { (
                 <div className="flex border-b border-[#1f2235]/40 bg-[#0d0f19] shrink-0">
                   <button
-                    onClick={() => setWorkbenchMode('training')}
+                    onClick={() => setSubDrawerMode('training')}
                     className={cn(
                       "flex-1 py-3 text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-1.5",
-                      workbenchMode === 'training' ? "text-[#b8ff57] border-b-2 border-[#b8ff57]" : "text-[#5e6686] hover:text-white"
+                      subDrawerMode === 'training' ? "text-[#b8ff57] border-b-2 border-[#b8ff57]" : "text-[#5e6686] hover:text-white"
                     )}
                   >
                     <Terminal className="w-3.5 h-3.5" />
                     Train
                   </button>
                   <button
-                    onClick={() => setWorkbenchMode('creation')}
+                    onClick={() => setSubDrawerMode('creation')}
                     className={cn(
                       "flex-1 py-3 text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-1.5",
-                      workbenchMode === 'creation' ? "text-[#b04cff] border-b-2 border-[#b04cff]" : "text-[#5e6686] hover:text-white"
+                      subDrawerMode === 'creation' ? "text-[#b04cff] border-b-2 border-[#b04cff]" : "text-[#5e6686] hover:text-white"
                     )}
                   >
                     <Sparkles className="w-3.5 h-3.5" />
@@ -3085,7 +3085,7 @@ Respond ONLY in JSON matching this format:
               )}
 
               {/* ===== TRAINING SET COMPILER CONTENT ===== */}
-              {((workbenchMode === "training") || currentTab === 'training') && (
+              {((subDrawerMode === "training") || currentTab === 'training') && (
                 <TrainingSetCompiler
                   nodes={nodes}
                   memories={memories}
@@ -3103,7 +3103,7 @@ Respond ONLY in JSON matching this format:
               )}
 
               {/* ===== AGENT SPARK COMPILER / CREATION CONTENT ===== */}
-              {((workbenchMode === "creation") || currentTab === 'creation') && (
+              {((subDrawerMode === "creation") || currentTab === 'creation') && (
                 <AgentCompiler
                   creationAgentName={creationAgentName}
                   setCreationAgentName={setCreationAgentName}
