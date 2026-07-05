@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Play, Save, Share2, MoreHorizontal, Clock, Search, 
+  Play, Save, Share2, MoreHorizontal, Clock, Search, Plus,
   Trash2, X, ToggleLeft, ToggleRight, Database, ShieldAlert, 
    Zap, Cpu, Code, HelpCircle, Sparkles, Info, AlertTriangle, AlertCircle, 
 
@@ -261,6 +261,7 @@ export function AIWonderCanvas({
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [dragStartNodePos, setDragStartNodePos] = useState({ x: 0, y: 0 });
+  const selectedNodesStartPosRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   // Adding nodes panel
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
@@ -372,6 +373,302 @@ export function AIWonderCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
 
+  // Clipboard, undo/redo, context menu, multi-select, external drag state
+  const [clipboard, setClipboard] = useState<{ nodes: WorkflowNode[]; connections: WorkflowConnection[] } | null>(null);
+  const [history, setHistory] = useState<{ nodes: WorkflowNode[]; connections: WorkflowConnection[] }[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const historyIndexRef = useRef(-1);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; canvasX: number; canvasY: number } | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  // Push current state to undo history
+  const pushHistory = () => {
+    const idx = historyIndexRef.current;
+    setHistory(prev => {
+      const newHistory = prev.slice(0, idx + 1);
+      newHistory.push({ nodes: JSON.parse(JSON.stringify(nodes)), connections: JSON.parse(JSON.stringify(connections)) });
+      if (newHistory.length > 50) newHistory.shift();
+      return newHistory;
+    });
+    const newIdx = Math.min(idx + 1, 49);
+    historyIndexRef.current = newIdx;
+    setHistoryIndex(newIdx);
+  };
+
+  // Undo
+  const handleUndo = () => {
+    const idx = historyIndexRef.current;
+    if (idx > 0) {
+      const prev = history[idx - 1];
+      setNodes(prev.nodes);
+      setConnections(prev.connections);
+      historyIndexRef.current = idx - 1;
+      setHistoryIndex(idx - 1);
+      showNotification('Undo');
+    }
+  };
+
+  // Redo
+  const handleRedo = () => {
+    const idx = historyIndexRef.current;
+    if (idx < history.length - 1) {
+      const next = history[idx + 1];
+      setNodes(next.nodes);
+      setConnections(next.connections);
+      historyIndexRef.current = idx + 1;
+      setHistoryIndex(idx + 1);
+      showNotification('Redo');
+    }
+  };
+
+  // Copy selected nodes
+  const handleCopy = () => {
+    const ids = selectedNodeIds.size > 0 ? selectedNodeIds : (selectedNode ? new Set([selectedNode.id]) : new Set());
+    if (ids.size === 0) return;
+    const copiedNodes = nodes.filter(n => ids.has(n.id));
+    const copiedConns = connections.filter(c => ids.has(c.fromId) || ids.has(c.toId));
+    setClipboard({ nodes: copiedNodes, connections: copiedConns });
+    showNotification(`Copied ${ids.size} node(s)`);
+  };
+
+  // Paste from clipboard
+  const handlePaste = () => {
+    if (!clipboard) return;
+    pushHistory();
+    const idMap = new Map<string, string>();
+    const newNodes = clipboard.nodes.map(n => {
+      const newId = `${n.type}-${Math.random().toString(36).substr(2, 9)}`;
+      idMap.set(n.id, newId);
+      return { ...n, id: newId, x: n.x + 40, y: n.y + 40 };
+    });
+    const newConns = clipboard.connections.map(c => ({
+      ...c,
+      id: `conn-${Math.random().toString(36).substr(2, 9)}`,
+      fromId: idMap.get(c.fromId) || c.fromId,
+      toId: idMap.get(c.toId) || c.toId,
+    }));
+    setNodes(prev => [...prev, ...newNodes]);
+    setConnections(prev => [...prev, ...newConns]);
+    setSelectedNodeIds(new Set(newNodes.map(n => n.id)));
+    showNotification(`Pasted ${newNodes.length} node(s)`);
+  };
+
+  // Delete selected nodes
+  const handleDeleteSelected = () => {
+    const ids = selectedNodeIds.size > 0 ? selectedNodeIds : (selectedNode ? new Set([selectedNode.id]) : new Set());
+    if (ids.size === 0) return;
+    pushHistory();
+    setNodes(prev => prev.filter(n => !ids.has(n.id)));
+    setConnections(prev => prev.filter(c => !ids.has(c.fromId) && !ids.has(c.toId)));
+    setSelectedNodeIds(new Set());
+    setSelectedNode(null);
+    showNotification(`Deleted ${ids.size} node(s)`);
+  };
+
+  // Select all nodes
+  const handleSelectAll = () => {
+    setSelectedNodeIds(new Set(nodes.map(n => n.id)));
+  };
+
+  // Duplicate selected nodes
+  const handleDuplicate = () => {
+    const ids = selectedNodeIds.size > 0 ? selectedNodeIds : (selectedNode ? new Set([selectedNode.id]) : new Set());
+    if (ids.size === 0) return;
+    pushHistory();
+    const idMap = new Map<string, string>();
+    const duped = nodes.filter(n => ids.has(n.id)).map(n => {
+      const newId = `${n.type}-${Math.random().toString(36).substr(2, 9)}`;
+      idMap.set(n.id, newId);
+      return { ...n, id: newId, x: n.x + 60, y: n.y + 60 };
+    });
+    const dupedConns = connections.filter(c => ids.has(c.fromId) || ids.has(c.toId)).map(c => ({
+      ...c,
+      id: `conn-${Math.random().toString(36).substr(2, 9)}`,
+      fromId: idMap.get(c.fromId) || c.fromId,
+      toId: idMap.get(c.toId) || c.toId,
+    }));
+    setNodes(prev => [...prev, ...duped]);
+    setConnections(prev => [...prev, ...dupedConns]);
+    setSelectedNodeIds(new Set(duped.map(n => n.id)));
+    showNotification(`Duplicated ${duped.length} node(s)`);
+  };
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      if (!containerRef.current?.contains(target) && target !== document.body) return;
+
+      const isMod = e.metaKey || e.ctrlKey;
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        handleDeleteSelected();
+      } else if (isMod && e.key === 'c') {
+        e.preventDefault();
+        handleCopy();
+      } else if (isMod && e.key === 'v') {
+        e.preventDefault();
+        handlePaste();
+      } else if (isMod && e.key === 'a') {
+        e.preventDefault();
+        handleSelectAll();
+      } else if (isMod && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if (isMod && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
+      } else if (isMod && e.key === 'd') {
+        e.preventDefault();
+        handleDuplicate();
+      } else if (e.key === 'Escape') {
+        setSelectedNode(null);
+        setSelectedNodeIds(new Set());
+        setConnectingPin(null);
+        setContextMenu(null);
+        setIsAddPanelOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNode, selectedNodeIds, nodes, connections, clipboard, historyIndex, history]);
+
+  // Close context menu on click outside
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('contextmenu', close);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('contextmenu', close);
+    };
+  }, [contextMenu]);
+
+  // Right-click handler on canvas
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const rect = canvasWrapperRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const canvasX = (e.clientX - rect.left - panX) / scale;
+    const canvasY = (e.clientY - rect.top - panY) / scale;
+    setContextMenu({ x: e.clientX, y: e.clientY, canvasX, canvasY });
+  };
+
+  // External drag-and-drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (e.currentTarget === e.target) setIsDragOver(false);
+  };
+
+  const handleExternalDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const rect = canvasWrapperRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const dropX = (e.clientX - rect.left - panX) / scale;
+    const dropY = (e.clientY - rect.top - panY) / scale;
+
+    // Handle text data (JSON, plain text)
+    const textData = e.dataTransfer.getData('text/plain');
+    if (textData) {
+      try {
+        const parsed = JSON.parse(textData);
+        if (parsed && typeof parsed === 'object') {
+          pushHistory();
+          const nodeId = `http-${Math.random().toString(36).substr(2, 9)}`;
+          const newNode: WorkflowNode = {
+            id: nodeId,
+            type: 'code',
+            category: 'core',
+            label: 'Dropped Data',
+            x: dropX,
+            y: dropY,
+            config: {
+              title: 'Dropped Data',
+              description: 'Node created from dropped JSON data',
+              code: `const data = ${JSON.stringify(parsed, null, 2)};\nreturn JSON.stringify(data, null, 2);`,
+              mockInputs: { payload: JSON.stringify(parsed) },
+              mockOutputs: { status: 'success' },
+            },
+          };
+          setNodes(prev => [...prev, newNode]);
+          showNotification('Dropped JSON data as Code node');
+          return;
+        }
+      } catch {}
+      // Plain text → create a note node
+      pushHistory();
+      const nodeId = `code-${Math.random().toString(36).substr(2, 9)}`;
+      const newNode: WorkflowNode = {
+        id: nodeId,
+        type: 'code',
+        category: 'core',
+        label: 'Dropped Text',
+        x: dropX,
+        y: dropY,
+        config: {
+          title: 'Dropped Text',
+          description: 'Node created from dropped text',
+          code: `return ${JSON.stringify(textData)};`,
+          mockInputs: { payload: textData },
+          mockOutputs: { status: 'success' },
+        },
+      };
+      setNodes(prev => [...prev, newNode]);
+      showNotification('Dropped text as Code node');
+      return;
+    }
+
+    // Handle files
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      pushHistory();
+      const newNodes: WorkflowNode[] = files.map((file, i) => ({
+        id: `document-${Math.random().toString(36).substr(2, 9)}`,
+        type: 'document' as const,
+        category: 'app' as const,
+        label: file.name,
+        x: dropX + i * 60,
+        y: dropY + i * 40,
+        config: {
+          title: file.name,
+          description: `Dropped file: ${file.type || 'unknown type'} (${(file.size / 1024).toFixed(1)}KB)`,
+          mockInputs: { payload: file.name },
+          mockOutputs: { status: 'success' },
+        },
+      }));
+      setNodes(prev => [...prev, ...newNodes]);
+      showNotification(`Dropped ${files.length} file(s) as Document nodes`);
+      return;
+    }
+
+    // Handle component data from sidebar templates
+    const templateData = e.dataTransfer.getData('application/x-workflow-template');
+    if (templateData) {
+      try {
+        const template: WorkflowTemplate = JSON.parse(templateData);
+        pushHistory();
+        const newNodes: WorkflowNode[] = template.nodes.map((n, i) => ({
+          ...n,
+          id: `${n.type}-${Math.random().toString(36).substr(2, 9)}`,
+          x: dropX + (n.x || 0) + i * 20,
+          y: dropY + (n.y || 0) + i * 20,
+        }));
+        setNodes(prev => [...prev, ...newNodes]);
+        showNotification(`Imported template: ${template.name}`);
+      } catch {}
+    }
+  };
+
   // Trigger quick notifications
   const showNotification = (msg: string) => {
     setNotification(msg);
@@ -389,6 +686,12 @@ export function AIWonderCanvas({
         onAddMemory(m);
       }
     });
+  }, []);
+
+  // Initialize undo history with initial state
+  useEffect(() => {
+    setHistory([{ nodes: JSON.parse(JSON.stringify(nodes)), connections: JSON.parse(JSON.stringify(connections)) }]);
+    setHistoryIndex(0);
   }, []);
 
   // Sync memory details when double clicked
@@ -436,8 +739,22 @@ export function AIWonderCanvas({
       const onMove = (e: MouseEvent) => {
         const dx = (e.clientX - dragStart.x) / scale;
         const dy = (e.clientY - dragStart.y) / scale;
+        const startPosMap = selectedNodesStartPosRef.current;
         setNodes((prev) =>
-          prev.map((n) => (n.id === draggedNodeId ? { ...n, x: Math.round(dragStartNodePos.x + dx), y: Math.round(dragStartNodePos.y + dy) } : n))
+          prev.map((n) => {
+            if (n.id === draggedNodeId) {
+              return { ...n, x: Math.round(dragStartNodePos.x + dx), y: Math.round(dragStartNodePos.y + dy) };
+            }
+            // Multi-node drag: use frozen positions from drag start
+            const startPos = startPosMap.get(n.id);
+            if (startPos) {
+              const draggedStartPos = startPosMap.get(draggedNodeId!) || dragStartNodePos;
+              const offsetX = startPos.x - draggedStartPos.x;
+              const offsetY = startPos.y - draggedStartPos.y;
+              return { ...n, x: Math.round(dragStartNodePos.x + dx + offsetX), y: Math.round(dragStartNodePos.y + dy + offsetY) };
+            }
+            return n;
+          })
         );
       };
 
@@ -455,13 +772,15 @@ export function AIWonderCanvas({
        window.removeEventListener('mousemove', onMove);
        window.removeEventListener('mouseup', onUp);
      };
-    }, [isPanning, draggedNodeId, dragStart, scale, dragStartNodePos]);
+    }, [isPanning, draggedNodeId, dragStart, scale, dragStartNodePos, selectedNodeIds]);
 
   // Canvas Drag/Pan Event handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     const target = e.target as HTMLElement;
     if (target.closest('.node-box') || target.closest('button') || target.closest('input')) return;
+    setSelectedNodeIds(new Set());
+    setSelectedNode(null);
     setIsPanning(true);
     setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
   };
@@ -553,9 +872,35 @@ export function AIWonderCanvas({
      e.stopPropagation();
      if (currentTab === 'training' || (isSubDrawerOpen && subDrawerMode === "training")) return;
      if (e.button !== 0) return;
+
+     // Multi-select: Ctrl/Cmd+click toggles selection
+     if (e.metaKey || e.ctrlKey) {
+       setSelectedNodeIds(prev => {
+         const next = new Set(prev);
+         if (next.has(node.id)) {
+           next.delete(node.id);
+         } else {
+           next.add(node.id);
+         }
+         return next;
+       });
+       setSelectedNode(node);
+       return;
+     }
+
      setDraggedNodeId(node.id);
      setDragStart({ x: e.clientX, y: e.clientY });
      setDragStartNodePos({ x: node.x, y: node.y });
+     // Freeze positions of all selected nodes for multi-node drag
+     const startPosMap = new Map<string, { x: number; y: number }>();
+     if (selectedNodeIds.has(node.id)) {
+       for (const n of nodes) {
+         if (selectedNodeIds.has(n.id) || n.id === node.id) {
+           startPosMap.set(n.id, { x: n.x, y: n.y });
+         }
+       }
+     }
+     selectedNodesStartPosRef.current = startPosMap;
    };
 
   // Handle double clicking any node to show the full screen/overlay NDV
@@ -587,6 +932,7 @@ export function AIWonderCanvas({
   // Delete a node and its connections
   const handleDeleteNode = (nodeId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    pushHistory();
     setNodes(prev => prev.filter(n => n.id !== nodeId));
     setConnections(prev => prev.filter(c => c.fromId !== nodeId && c.toId !== nodeId));
     showNotification('Node deleted');
@@ -2747,7 +3093,11 @@ Respond ONLY in JSON matching this format:
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onDoubleClick={handleCanvasDoubleClick}
-              className="absolute inset-0 cursor-grab active:cursor-grabbing overflow-hidden"
+              onContextMenu={handleContextMenu}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleExternalDrop}
+              className={`absolute inset-0 cursor-grab active:cursor-grabbing overflow-hidden ${isDragOver ? 'ring-2 ring-[#b8ff57]/50 ring-inset' : ''}`}
             >
               {/* Grid background and SVG Connections container */}
               <div
@@ -2900,7 +3250,7 @@ Respond ONLY in JSON matching this format:
                 }}
               >
                 {nodes.map(node => {
-                  const isSelected = selectedNode?.id === node.id || selectedLogNodeId === node.id;
+                  const isSelected = selectedNode?.id === node.id || selectedLogNodeId === node.id || selectedNodeIds.has(node.id);
                   
                   // Styling colors per category
                   const CATEGORY_STYLES = {
@@ -5195,6 +5545,105 @@ Respond ONLY in JSON matching this format:
             </div>
 
           </div>
+        </div>
+      )}
+
+      {/* Drag-and-drop overlay */}
+      {isDragOver && (
+        <div className="fixed inset-0 z-[90] pointer-events-none flex items-center justify-center">
+          <div className="bg-[#b8ff57]/10 border-2 border-dashed border-[#b8ff57]/60 rounded-xl px-12 py-8 backdrop-blur-sm">
+            <div className="flex flex-col items-center gap-3">
+              <Upload className="w-8 h-8 text-[#b8ff57] animate-bounce" />
+              <span className="text-sm font-mono font-bold text-[#b8ff57] uppercase tracking-widest">Drop files, text, or JSON onto canvas</span>
+              <span className="text-[10px] text-[#5e6686] font-mono">Files become Document nodes • Text/JSON become Code nodes</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Right-click context menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-[100] bg-[#0c0d14] border border-[#1f2235] rounded-lg shadow-2xl py-1.5 min-w-[200px] font-mono text-[11px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              setSpawnCoords({ x: contextMenu.canvasX, y: contextMenu.canvasY });
+              setIsAddPanelOpen(true);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-4 py-2 hover:bg-[#b8ff57]/10 text-[#e8eaf6] hover:text-[#b8ff57] flex items-center gap-2.5 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Node Here</span>
+          </button>
+          <div className="border-t border-[#1f2235]/40 my-1" />
+          <button
+            onClick={() => { handleCopy(); setContextMenu(null); }}
+            className="w-full text-left px-4 py-2 hover:bg-[#b8ff57]/10 text-[#e8eaf6] hover:text-[#b8ff57] flex items-center gap-2.5 transition-colors"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span>Copy <span className="text-[#5e6686] ml-1">⌘C</span></span>
+          </button>
+          <button
+            onClick={() => { handlePaste(); setContextMenu(null); }}
+            className="w-full text-left px-4 py-2 hover:bg-[#b8ff57]/10 text-[#e8eaf6] hover:text-[#b8ff57] flex items-center gap-2.5 transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Paste <span className="text-[#5e6686] ml-1">⌘V</span></span>
+          </button>
+          <button
+            onClick={() => { handleDuplicate(); setContextMenu(null); }}
+            className="w-full text-left px-4 py-2 hover:bg-[#b8ff57]/10 text-[#e8eaf6] hover:text-[#b8ff57] flex items-center gap-2.5 transition-colors"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span>Duplicate <span className="text-[#5e6686] ml-1">⌘D</span></span>
+          </button>
+          <div className="border-t border-[#1f2235]/40 my-1" />
+          <button
+            onClick={() => { handleSelectAll(); setContextMenu(null); }}
+            className="w-full text-left px-4 py-2 hover:bg-[#b8ff57]/10 text-[#e8eaf6] hover:text-[#b8ff57] flex items-center gap-2.5 transition-colors"
+          >
+            <Check className="w-3.5 h-3.5" />
+            <span>Select All <span className="text-[#5e6686] ml-1">⌘A</span></span>
+          </button>
+          <button
+            onClick={() => { handleUndo(); setContextMenu(null); }}
+            className="w-full text-left px-4 py-2 hover:bg-[#b8ff57]/10 text-[#e8eaf6] hover:text-[#b8ff57] flex items-center gap-2.5 transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Undo <span className="text-[#5e6686] ml-1">⌘Z</span></span>
+          </button>
+          <button
+            onClick={() => { handleRedo(); setContextMenu(null); }}
+            className="w-full text-left px-4 py-2 hover:bg-[#b8ff57]/10 text-[#e8eaf6] hover:text-[#b8ff57] flex items-center gap-2.5 transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Redo <span className="text-[#5e6686] ml-1">⌘⇧Z</span></span>
+          </button>
+          <div className="border-t border-[#1f2235]/40 my-1" />
+          <button
+            onClick={() => { handleDeleteSelected(); setContextMenu(null); }}
+            className="w-full text-left px-4 py-2 hover:bg-rose-500/10 text-rose-400 hover:text-rose-300 flex items-center gap-2.5 transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Delete <span className="text-[#5e6686] ml-1">Del</span></span>
+          </button>
+          <div className="border-t border-[#1f2235]/40 my-1" />
+          <button
+            onClick={() => {
+              pushHistory();
+              setNodes(prev => prev.map(n => ({ ...n, x: Math.round(n.x / 40) * 40, y: Math.round(n.y / 40) * 40 })));
+              showNotification('Nodes snapped to grid');
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-4 py-2 hover:bg-[#b8ff57]/10 text-[#e8eaf6] hover:text-[#b8ff57] flex items-center gap-2.5 transition-colors"
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>Snap to Grid</span>
+          </button>
         </div>
       )}
 
