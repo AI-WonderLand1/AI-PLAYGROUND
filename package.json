@@ -18,7 +18,7 @@
     "@supabase/supabase-js": "^2.108.2",
     "@tailwindcss/vite": "^4.1.14",
     "@types/three": "^0.183.1",
-    "@vitejs/plugin-react": "^5.0.4",
+    "@vitejs/plugin-react": "^6.0.3",
     "clsx": "^2.1.1",
     "cors": "^2.8.6",
     "cron-parser": "^5.6.1",
