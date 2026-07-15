@@ -18,7 +18,7 @@ jobs:
 
       # 2. Set up Node.js environment
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: 'npm' # Automatically caches node_modules for faster runs
