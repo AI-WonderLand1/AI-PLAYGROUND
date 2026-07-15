@@ -27,7 +27,7 @@
     "lucide-react": "^1.22.0",
     "mongodb": "^7.3.0",
     "motion": "^12.42.2",
-    "openai": "^6.45.0",
+    "openai": "^6.47.0",
     "react": "^19.0.0",
     "react-dom": "^19.2.7",
     "react-markdown": "^10.1.0",
