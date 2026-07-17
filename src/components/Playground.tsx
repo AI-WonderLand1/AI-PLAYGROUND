@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Square, Terminal, Copy, Check, Code, MessageSquare } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { Message, AIModule } from '../types';
@@ -22,6 +22,21 @@ export function Playground({ module }: PlaygroundProps) {
   const [isStreaming, setIsStreaming] = useState(false);
   const contentRef = useRef('');
   const lastUpdateRef = useRef(0);
+  const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup all pending timeouts on unmount
+  useEffect(() => {
+    const refs = timeoutsRef;
+    return () => { refs.current.forEach(clearTimeout); refs.current = []; };
+  }, []);
+
+  const safeTimeout = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      timeoutsRef.current = timeoutsRef.current.filter(t => t !== id);
+      fn();
+    }, ms);
+    timeoutsRef.current.push(id);
+  }, []);
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -190,7 +205,7 @@ export function Playground({ module }: PlaygroundProps) {
 
           finalModelResponse = accumulated;
           setIsSpeaking(true);
-          setTimeout(() => setIsSpeaking(false), 3000);
+          safeTimeout(() => setIsSpeaking(false), 3000);
         } catch (err: any) {
           if (err.name === 'AbortError') {
             finalModelResponse = accumulated || ' ';
@@ -294,7 +309,7 @@ export function Playground({ module }: PlaygroundProps) {
           }]);
 
           setIsSpeaking(true);
-          setTimeout(() => setIsSpeaking(false), 3000);
+          safeTimeout(() => setIsSpeaking(false), 3000);
         }
       } else if (finalModelResponse && !streamMsgAdded) {
         setMessages(prev => [...prev, {
@@ -304,7 +319,7 @@ export function Playground({ module }: PlaygroundProps) {
         }]);
 
         setIsSpeaking(true);
-        setTimeout(() => setIsSpeaking(false), 3000);
+        safeTimeout(() => setIsSpeaking(false), 3000);
       }
     } catch (error) {
       console.error("AI Error:", error);
@@ -322,7 +337,7 @@ export function Playground({ module }: PlaygroundProps) {
     const embedCode = `<iframe src="${window.location.origin}" width="100%" height="600px" frameborder="0"></iframe>`;
     navigator.clipboard.writeText(embedCode);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    safeTimeout(() => setCopied(false), 2000);
   };
 
   return (

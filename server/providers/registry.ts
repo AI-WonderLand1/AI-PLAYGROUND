@@ -336,6 +336,7 @@ export async function callProviderStreaming(
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(120000),
   });
 
   if (!res.ok) {
@@ -420,6 +421,7 @@ export async function callProvider(
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(120000),
   });
 
   if (!res.ok) {

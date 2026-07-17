@@ -1304,16 +1304,20 @@ export function AIWonderCanvas({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-save draft every 30 seconds
+  // Auto-save draft every 30 seconds — use a dirty flag to avoid recreating the timer on every keystroke
+  const autoSaveDirtyRef = useRef(false);
+  useEffect(() => { autoSaveDirtyRef.current = true; }, [nodes, connections, workflowTitle, workflowVersions]);
   useEffect(() => {
+    if (!isActive) return;
     const interval = setInterval(() => {
+      if (!autoSaveDirtyRef.current) return;
+      autoSaveDirtyRef.current = false;
       const id = handleSaveVersion('auto-save');
       setLastAutoSave(Date.now());
       void id;
     }, 30000);
     return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, connections, workflowTitle, isActive, workflowVersions]);
+  }, [isActive]);
 
   // Compute diff between current workflow and a selected version
   const computeVersionDiff = (versionId: string | null): { added: string[]; removed: string[]; changed: string[] } => {
@@ -2166,7 +2170,7 @@ export function AIWonderCanvas({
       for (const timer of scheduleTimersRef.current.values()) clearInterval(timer);
       scheduleTimersRef.current.clear();
     };
-  });
+  }, [nodes]);
 
   // Gemini AI Analysis for bot telemetry errors
   const handleFetchAIAnalysis = async (ev: NexusEvent) => {
