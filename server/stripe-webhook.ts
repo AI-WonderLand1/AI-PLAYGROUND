@@ -2,7 +2,13 @@ import { Router } from 'express';
 import Stripe from 'stripe';
 import { supabaseAdmin } from './supabase-admin';
 
-const stripe = new Stripe(process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY || '');
+let _stripe: Stripe | null = null;
+function getStripe(): Stripe {
+  if (_stripe) return _stripe;
+  const key = process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY || '';
+  _stripe = new Stripe(key);
+  return _stripe;
+}
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
 
@@ -13,7 +19,7 @@ router.post('/stripe/webhook', async (req, res) => {
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+    event = getStripe().webhooks.constructEvent(req.body, sig, webhookSecret);
   } catch (err: any) {
     console.error('Stripe webhook signature verification failed:', err.message);
     res.status(400).json({ error: 'Invalid signature' });
@@ -28,7 +34,7 @@ router.post('/stripe/webhook', async (req, res) => {
         const userId = session.metadata?.userId;
         if (!userId || !session.subscription) break;
 
-        const sub = await stripe.subscriptions.retrieve(session.subscription as string) as any;
+        const sub = await getStripe().subscriptions.retrieve(session.subscription as string) as any;
 
         await supabaseAdmin.from('subscriptions').upsert({
           user_id: userId,

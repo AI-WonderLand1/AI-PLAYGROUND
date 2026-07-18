@@ -14,6 +14,7 @@ import { PlaygroundConfig, AIModule, MemoryNode, NexusEvent, ModelName, Session 
 import { Terminal, Database, ShieldAlert, Search, Globe, Sparkles, MessageSquare, BookOpen, Layers, Settings, AppWindow, Cpu, BarChart3, Lock } from 'lucide-react';
 import { cn } from './utils';
 import { supabase, getSession, signInWithEmail } from './lib/supabase';
+import { useRealtimeSync, SyncedAgent } from './hooks/useRealtimeSync';
 
 const INITIAL_MEMORIES: MemoryNode[] = [
   {
@@ -90,6 +91,12 @@ export default function App() {
     initAuth();
   }, []);
 
+  // Realtime sync: agents, workflows, memories from Supabase
+  const [syncedAgents, setSyncedAgents] = useState<SyncedAgent[]>([]);
+  const { userId, upsertAgent, deleteAgent, upsertMemory } = useRealtimeSync({
+    onAgentsChange: setSyncedAgents,
+  });
+
   // Keyboard shortcut
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -114,7 +121,7 @@ export default function App() {
     return saved ? JSON.parse(saved) : INITIAL_EVENTS;
   });
 
-  // Playground Modules State
+  // Playground Modules State — seeded from Supabase when available, hardcoded defaults otherwise
   const [modules, setModules] = useState<AIModule[]>([
     {
       id: '1',
@@ -225,13 +232,37 @@ export default function App() {
   const [activeModuleId, setActiveModuleId] = useState<string>('1');
   const [isKeysModalOpen, setIsKeysModalOpen] = useState(false);
 
-  // Save changes to localStorage
+  // Sync modules from Supabase when syncedAgents load
   useEffect(() => {
-    localStorage.setItem('playground_memories', JSON.stringify(memories));
+    if (syncedAgents.length > 0) {
+      const mapped: AIModule[] = syncedAgents.map(a => ({
+        id: a.id,
+        name: a.name,
+        training: [],
+        config: {
+          model: a.model as any,
+          systemInstruction: a.system_instruction,
+          temperature: a.temperature,
+          topP: a.top_p,
+          topK: a.top_k,
+          showRobot: a.show_robot,
+        }
+      }));
+      setModules(mapped);
+    }
+  }, [syncedAgents]);
+
+  // Save changes to localStorage (prune to prevent unbounded growth)
+  useEffect(() => {
+    const capped = memories.length > 500 ? memories.slice(0, 500) : memories;
+    if (capped.length < memories.length) setMemories(capped);
+    localStorage.setItem('playground_memories', JSON.stringify(capped));
   }, [memories]);
 
   useEffect(() => {
-    localStorage.setItem('nexus_telemetry_events', JSON.stringify(events));
+    const capped = events.length > 200 ? events.slice(0, 200) : events;
+    if (capped.length < events.length) setEvents(capped);
+    localStorage.setItem('nexus_telemetry_events', JSON.stringify(capped));
   }, [events]);
 
   // Early returns AFTER all hooks
@@ -353,13 +384,25 @@ export default function App() {
 
   const addModule = () => {
     const newId = Math.random().toString(36).substr(2, 9);
-    setModules(prev => [...prev, {
+    const newAgent = {
       id: newId,
-      name: `Agent ${String.fromCharCode(65 + prev.length)}`,
+      name: `Agent ${String.fromCharCode(65 + modules.length)}`,
       training: [],
-      config: { ...prev[0].config }
-    }]);
+      config: { ...modules[0].config }
+    };
+    setModules(prev => [...prev, newAgent]);
     setActiveModuleId(newId);
+    // Persist to Supabase
+    upsertAgent({
+      id: newId,
+      name: newAgent.name,
+      model: newAgent.config.model,
+      system_instruction: newAgent.config.systemInstruction,
+      temperature: newAgent.config.temperature,
+      top_p: newAgent.config.topP,
+      top_k: newAgent.config.topK,
+      show_robot: newAgent.config.showRobot,
+    });
   };
 
   const removeModule = (id: string) => {
@@ -368,6 +411,8 @@ export default function App() {
     if (activeModuleId === id) {
       setActiveModuleId(modules.find(m => m.id !== id)?.id || '');
     }
+    // Delete from Supabase
+    deleteAgent(id);
   };
 
   return (

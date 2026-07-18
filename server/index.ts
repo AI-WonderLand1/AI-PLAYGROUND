@@ -2,15 +2,17 @@ import express from 'express';
 import cors from 'cors';
 import { validateWonderlandKey } from './wonderland-keys';
 import { callModel, callModelStreaming } from './providers/registry';
-import stripeWebhook from './stripe-webhook';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
 
 app.use(cors());
 
-// Stripe webhook needs raw body for signature verification
-app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
+// Stripe webhook — only mount if Stripe key is configured
+if (process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY) {
+  const { default: stripeWebhook } = await import('./stripe-webhook');
+  app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
+}
 
 app.use(express.json());
 
@@ -88,6 +90,10 @@ app.post('/api/chat/stream', async (req, res) => {
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection:', err);
 });
 
 app.listen(PORT, () => {

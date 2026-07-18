@@ -76,3 +76,40 @@ CREATE POLICY "Users can view own subscription"
 
 -- Realtime: enable broadcast for live usage dashboards
 ALTER PUBLICATION supabase_realtime ADD TABLE public.usage_logs;
+
+-- ── Memories (shared between outer and inner apps) ──────────────────
+CREATE TABLE public.memories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'note',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.memories ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can CRUD own memories"
+  ON public.memories FOR ALL USING (auth.uid() = user_id);
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.memories;
+
+-- ── Workflows (AI Wonder Canvas state, synced across apps) ──────────
+CREATE TABLE public.workflows (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL DEFAULT 'Untitled Workflow',
+  nodes JSONB NOT NULL DEFAULT '[]',
+  connections JSONB NOT NULL DEFAULT '[]',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.workflows ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can CRUD own workflows"
+  ON public.workflows FOR ALL USING (auth.uid() = user_id);
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.workflows;
+
+-- ── Agents: enable realtime for cross-app sync ──────────────────────
+ALTER PUBLICATION supabase_realtime ADD TABLE public.agents;

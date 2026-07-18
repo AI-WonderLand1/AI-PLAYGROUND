@@ -164,3 +164,11 @@ export interface WorkflowConnection {
   isTrainingEdge?: boolean;
   fromPort?: string;
 }
+
+export interface Session {
+  user: {
+    id: string;
+    email?: string;
+  };
+  access_token: string;
+}
