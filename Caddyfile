@@ -1,0 +1,7 @@
+ai-playground.dreammakerhub.website {
+    reverse_proxy localhost:3000
+
+    handle_path /api/* {
+        reverse_proxy localhost:3001
+    }
+}
