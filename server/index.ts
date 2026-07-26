@@ -1,12 +1,20 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { validateWonderlandKey } from './wonderland-keys';
 import { callModel, callModelStreaming } from './providers/registry';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
 
 app.use(cors());
+
+const distPath = path.resolve(__dirname, '..', 'dist');
+app.use(express.static(distPath));
 
 // Stripe webhook — only mount if Stripe key is configured
 if (process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY) {
@@ -90,6 +98,10 @@ app.post('/api/chat/stream', async (req, res) => {
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
+});
+
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
 process.on('unhandledRejection', (err) => {

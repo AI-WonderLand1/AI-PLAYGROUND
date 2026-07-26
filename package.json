@@ -9,6 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
+    "start": "NODE_ENV=production node --import tsx/esm server/index.ts",
+    "postinstall": "vite build",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
