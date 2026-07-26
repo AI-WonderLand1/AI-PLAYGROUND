@@ -184,6 +184,7 @@ AI-PLAYGROUND/
 │   ├── supabase-admin.ts       # Supabase admin client
 │   └── stripe-webhook.ts       # Stripe webhook handler
 ├── supabase-schema.sql         # Full Supabase database schema
+├── railway.json                # Railway deployment config
 ├── ecosystem.config.cjs        # PM2 process management config
 ├── vite.config.ts              # Vite configuration
 ├── tsconfig.json               # TypeScript configuration
@@ -309,6 +310,20 @@ All tables use **Row Level Security (RLS)** to ensure users can only access thei
 ---
 
 ## Deployment
+
+### Railway (recommended)
+
+This project includes a `railway.json` for zero-config deployment on Railway.
+
+1. Push your repo to GitHub and connect it to Railway.
+2. Set the required environment variables in the Railway dashboard:
+   - `WONDERLAND_MASTER_KEY`
+   - `GEMINI_API_KEY`
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+   - Any other provider keys your agents need
+3. Railway will auto-detect `railway.json`, install deps, build the frontend, and start the server.
+4. A health check at `/api/health` ensures your service stays up.
 
 ### Build for Production
 

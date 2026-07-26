@@ -4,7 +4,7 @@ import { GoogleGenAI } from '@google/genai';
 import { Message, AIModule } from '../types';
 import { ResponseView } from './ResponseView';
 import { RobotScene } from './RobotScene';
-import { cn } from '../utils';
+import { cn, getOpenRouterModel } from '../utils';
 import { isCustomModel, getCustomProviderForModel, callCustomProvider } from '../lib/providers/registry';
 import { logUsage } from '../lib/usageTracker';
 
@@ -120,115 +120,125 @@ export function Playground({ module }: PlaygroundProps) {
         }
       } else if (!isImgModel) {
         const wonderlandKey = localStorage.getItem('wonderland_master_key');
+        const openRouterKey = localStorage.getItem('openrouter_api_key');
+        const orModel = getOpenRouterModel(config.model);
         let accumulated = '';
 
-        try {
-          abortControllerRef.current = new AbortController();
-          setIsStreaming(true);
+        const buildMessages = () => [
+          ...(config.systemInstruction ? [{ role: 'system', content: config.systemInstruction }] : []),
+          ...messages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
+          { role: 'user', content: prompt }
+        ];
 
-          const res = await fetch('/api/chat/stream', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model: config.model,
-              messages: [
-                ...(config.systemInstruction ? [{ role: 'system', content: config.systemInstruction }] : []),
-                ...messages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
-                { role: 'user', content: prompt }
-              ],
-              config: {
-                temperature: config.temperature,
-                topP: config.topP,
-                maxTokens: config.maxOutputTokens,
+        // ── OpenRouter path ──────────────────────────────────────────
+        if (openRouterKey && orModel) {
+          try {
+            abortControllerRef.current = new AbortController();
+            setIsStreaming(true);
+
+            const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${openRouterKey}`,
+                'HTTP-Referer': window.location.origin,
+                'X-Title': 'AI-Playground',
               },
-              wonderlandKey,
-            }),
-            signal: abortControllerRef.current.signal,
-          });
+              body: JSON.stringify({
+                model: orModel,
+                messages: buildMessages(),
+                stream: true,
+                temperature: config.temperature,
+                top_p: config.topP,
+                max_tokens: config.maxOutputTokens,
+              }),
+              signal: abortControllerRef.current.signal,
+            });
 
-          if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            throw new Error(errData?.error || `HTTP ${res.status}`);
-          }
-
-          const reader = res.body!.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
-
-          setMessages(prev => [...prev, { role: 'model', content: '', timestamp: Date.now() }]);
-          streamMsgAdded = true;
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              if (!line.startsWith('data: ')) continue;
-              const data = line.slice(6).trim();
-              if (data === '[DONE]') continue;
-
-              try {
-                const parsed = JSON.parse(data);
-                const delta = parsed.choices?.[0]?.delta?.content || '';
-                accumulated += delta;
-
-                if (parsed.usage) {
-                  setUsageInfo({
-                    prompt_tokens: parsed.usage.prompt_tokens,
-                    completion_tokens: parsed.usage.completion_tokens,
-                    total_tokens: parsed.usage.total_tokens,
-                  });
-                  logUsage({
-                    model: config.model,
-                    promptTokens: parsed.usage.prompt_tokens || 0,
-                    completionTokens: parsed.usage.completion_tokens || 0,
-                    totalTokens: parsed.usage.total_tokens || 0,
-                    status: 'success',
-                  });
-                }
-
-                setMessages(prev => {
-                  const updated = [...prev];
-                  const last = updated[updated.length - 1];
-                  if (last && last.role === 'model') {
-                    updated[updated.length - 1] = { ...last, content: accumulated };
-                  }
-                  return updated;
-                });
-              } catch {}
+            if (!res.ok) {
+              const errData = await res.json().catch(() => ({}));
+              throw new Error(errData?.error?.message || `OpenRouter HTTP ${res.status}`);
             }
-          }
 
-          finalModelResponse = accumulated;
-          setIsSpeaking(true);
-          safeTimeout(() => setIsSpeaking(false), 3000);
-        } catch (err: any) {
-          if (err.name === 'AbortError') {
-            finalModelResponse = accumulated || ' ';
-          } else {
-            console.warn("Streaming failed, falling back to non-streaming.", err);
+            const reader = res.body!.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            setMessages(prev => [...prev, { role: 'model', content: '', timestamp: Date.now() }]);
+            streamMsgAdded = true;
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+
+              for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const data = line.slice(6).trim();
+                if (data === '[DONE]') continue;
+
+                try {
+                  const parsed = JSON.parse(data);
+                  const delta = parsed.choices?.[0]?.delta?.content || '';
+                  accumulated += delta;
+
+                  if (parsed.usage) {
+                    setUsageInfo({
+                      prompt_tokens: parsed.usage.prompt_tokens,
+                      completion_tokens: parsed.usage.completion_tokens,
+                      total_tokens: parsed.usage.total_tokens,
+                    });
+                    logUsage({
+                      model: config.model,
+                      promptTokens: parsed.usage.prompt_tokens || 0,
+                      completionTokens: parsed.usage.completion_tokens || 0,
+                      totalTokens: parsed.usage.total_tokens || 0,
+                      status: 'success',
+                    });
+                  }
+
+                  setMessages(prev => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    if (last && last.role === 'model') {
+                      updated[updated.length - 1] = { ...last, content: accumulated };
+                    }
+                    return updated;
+                  });
+                } catch {}
+              }
+            }
+
+            finalModelResponse = accumulated;
+            setIsSpeaking(true);
+            safeTimeout(() => setIsSpeaking(false), 3000);
+          } catch (err: any) {
+            if (err.name === 'AbortError') {
+              finalModelResponse = accumulated || ' ';
+            } else {
+              console.warn("OpenRouter failed, falling back to proxy.", err);
+            }
+          } finally {
+            setIsStreaming(false);
+            abortControllerRef.current = null;
           }
-        } finally {
-          setIsStreaming(false);
-          abortControllerRef.current = null;
         }
 
+        // ── Proxy path (fallback when OpenRouter not used or failed) ──
         if (!finalModelResponse) {
           try {
-            const res = await fetchWithRetry('/api/chat', {
+            abortControllerRef.current = new AbortController();
+            setIsStreaming(true);
+
+            const res = await fetch('/api/chat/stream', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 model: config.model,
-                messages: [
-                  ...(config.systemInstruction ? [{ role: 'system', content: config.systemInstruction }] : []),
-                  ...messages.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
-                  { role: 'user', content: prompt }
-                ],
+                messages: buildMessages(),
                 config: {
                   temperature: config.temperature,
                   topP: config.topP,
@@ -236,81 +246,173 @@ export function Playground({ module }: PlaygroundProps) {
                 },
                 wonderlandKey,
               }),
+              signal: abortControllerRef.current.signal,
             });
 
-            if (res.ok) {
-              const data = await res.json();
-              finalModelResponse = data.content;
-              if (data.tokens || data.cost) {
-                setUsageInfo({ total_tokens: data.tokens, cost: data.cost });
-                logUsage({
-                  model: config.model,
-                  promptTokens: data.prompt_tokens || 0,
-                  completionTokens: data.completion_tokens || 0,
-                  totalTokens: data.tokens || 0,
-                  cost: data.cost,
-                  status: 'success',
-                });
-              }
-            } else {
+            if (!res.ok) {
               const errData = await res.json().catch(() => ({}));
-              console.warn(`Proxy API error (${res.status}): ${errData?.error || 'Unknown'}, falling through to Gemini.`);
+              throw new Error(errData?.error || `HTTP ${res.status}`);
             }
+
+            const reader = res.body!.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            if (!streamMsgAdded) {
+              setMessages(prev => [...prev, { role: 'model', content: '', timestamp: Date.now() }]);
+              streamMsgAdded = true;
+            }
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+
+              for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const data = line.slice(6).trim();
+                if (data === '[DONE]') continue;
+
+                try {
+                  const parsed = JSON.parse(data);
+                  const delta = parsed.choices?.[0]?.delta?.content || '';
+                  accumulated += delta;
+
+                  if (parsed.usage) {
+                    setUsageInfo({
+                      prompt_tokens: parsed.usage.prompt_tokens,
+                      completion_tokens: parsed.usage.completion_tokens,
+                      total_tokens: parsed.usage.total_tokens,
+                    });
+                    logUsage({
+                      model: config.model,
+                      promptTokens: parsed.usage.prompt_tokens || 0,
+                      completionTokens: parsed.usage.completion_tokens || 0,
+                      totalTokens: parsed.usage.total_tokens || 0,
+                      status: 'success',
+                    });
+                  }
+
+                  setMessages(prev => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    if (last && last.role === 'model') {
+                      updated[updated.length - 1] = { ...last, content: accumulated };
+                    }
+                    return updated;
+                  });
+                } catch {}
+              }
+            }
+
+            finalModelResponse = accumulated;
+            setIsSpeaking(true);
+            safeTimeout(() => setIsSpeaking(false), 3000);
           } catch (err: any) {
-            console.warn("Proxy call failed, falling through to Gemini.", err);
+            if (err.name === 'AbortError') {
+              finalModelResponse = accumulated || ' ';
+            } else {
+              console.warn("Proxy streaming failed, falling back to non-streaming.", err);
+            }
+          } finally {
+            setIsStreaming(false);
+            abortControllerRef.current = null;
+          }
+
+          if (!finalModelResponse) {
+            try {
+              const res = await fetchWithRetry('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  model: config.model,
+                  messages: buildMessages(),
+                  config: {
+                    temperature: config.temperature,
+                    topP: config.topP,
+                    maxTokens: config.maxOutputTokens,
+                  },
+                  wonderlandKey,
+                }),
+              });
+
+              if (res.ok) {
+                const data = await res.json();
+                finalModelResponse = data.content;
+                if (data.tokens || data.cost) {
+                  setUsageInfo({ total_tokens: data.tokens, cost: data.cost });
+                  logUsage({
+                    model: config.model,
+                    promptTokens: data.prompt_tokens || 0,
+                    completionTokens: data.completion_tokens || 0,
+                    totalTokens: data.tokens || 0,
+                    cost: data.cost,
+                    status: 'success',
+                  });
+                }
+              } else {
+                const errData = await res.json().catch(() => ({}));
+                console.warn(`Proxy API error (${res.status}): ${errData?.error || 'Unknown'}, falling through to Gemini.`);
+              }
+            } catch (err: any) {
+              console.warn("Proxy call failed, falling through to Gemini.", err);
+            }
           }
         }
       }
 
-      if (!finalModelResponse && !isImgModel) {
+      // ── Image models (always Gemini SDK) ──
+      if (isImgModel) {
         const ai = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY as any) });
-        
-        if (isImgModel) {
-          const geminiModel = (config.model.startsWith('gemini-') && !config.model.includes('banana')) ? config.model : 'imagen-3.0-generate-002';
-          const response = await ai.models.generateContent({
-            model: geminiModel,
-            contents: { parts: [{ text: prompt }] },
-            config: {
-              imageConfig: { aspectRatio: "1:1" }
-            }
-          });
-
-          let imageUrl = '';
-          for (const part of response.candidates[0].content.parts) {
-            if (part.inlineData) {
-              imageUrl = `data:image/png;base64,${part.inlineData.data}`;
-              break;
-            }
+        const geminiModel = (config.model.startsWith('gemini-') && !config.model.includes('banana')) ? config.model : 'imagen-3.0-generate-002';
+        const response = await ai.models.generateContent({
+          model: geminiModel,
+          contents: { parts: [{ text: prompt }] },
+          config: {
+            imageConfig: { aspectRatio: "1:1" }
           }
+        });
 
-          setMessages(prev => [...prev, {
-            role: 'model',
-            content: imageUrl ? `![Generated Image](${imageUrl})` : "Failed to generate image.",
-            timestamp: Date.now(),
-          }]);
-        } else {
-          const response = await ai.models.generateContent({
-            model: config.model.startsWith('gemini-') ? config.model : 'gemini-3-flash-preview',
-            contents: prompt,
-            config: {
-              systemInstruction: config.systemInstruction,
-              temperature: config.temperature,
-              topP: config.topP,
-              topK: config.topK,
-            },
-          });
-
-          let resultText = response.text || "No response received.";
-
-          setMessages(prev => [...prev, {
-            role: 'model',
-            content: resultText,
-            timestamp: Date.now(),
-          }]);
-
-          setIsSpeaking(true);
-          safeTimeout(() => setIsSpeaking(false), 3000);
+        let imageUrl = '';
+        for (const part of response.candidates?.[0]?.content?.parts ?? []) {
+          if (part.inlineData) {
+            imageUrl = `data:image/png;base64,${part.inlineData.data}`;
+            break;
+          }
         }
+
+        setMessages(prev => [...prev, {
+          role: 'model',
+          content: imageUrl ? `![Generated Image](${imageUrl})` : "Failed to generate image.",
+          timestamp: Date.now(),
+        }]);
+      } else if (!finalModelResponse) {
+        // ── Gemini SDK fallback (if both OpenRouter and proxy failed) ──
+        const ai = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY as any) });
+        const response = await ai.models.generateContent({
+          model: config.model.startsWith('gemini-') ? config.model : 'gemini-3-flash-preview',
+          contents: prompt,
+          config: {
+            systemInstruction: config.systemInstruction,
+            temperature: config.temperature,
+            topP: config.topP,
+            topK: config.topK,
+          },
+        });
+
+        const resultText = response.text || "No response received.";
+
+        setMessages(prev => [...prev, {
+          role: 'model',
+          content: resultText,
+          timestamp: Date.now(),
+        }]);
+
+        setIsSpeaking(true);
+        safeTimeout(() => setIsSpeaking(false), 3000);
       } else if (finalModelResponse && !streamMsgAdded) {
         setMessages(prev => [...prev, {
           role: 'model',

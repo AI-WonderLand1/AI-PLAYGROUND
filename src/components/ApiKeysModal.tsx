@@ -39,6 +39,9 @@ const DEFAULT_CUSTOM_PROVIDER: Omit<ProviderConfig, 'id'> = {
 export function ApiKeysModal({ isOpen, onClose }: ApiKeysModalProps) {
   const [masterKey, setMasterKey] = useState('');
   const [keyCopied, setKeyCopied] = useState(false);
+  const [openRouterKey, setOpenRouterKey] = useState('');
+  const [orKeyRevealed, setOrKeyRevealed] = useState(false);
+  const [orKeyCopied, setOrKeyCopied] = useState(false);
 
   const [customProviders, setCustomProviders] = useState<ProviderConfig[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -50,6 +53,9 @@ export function ApiKeysModal({ isOpen, onClose }: ApiKeysModalProps) {
   useEffect(() => {
     if (isOpen) {
       setMasterKey(getOrCreateMasterKey());
+      setOpenRouterKey(localStorage.getItem('openrouter_api_key') || '');
+      setOrKeyRevealed(false);
+      setOrKeyCopied(false);
       setCustomProviders(loadCustomProviders());
       setShowAddForm(false);
       setEditingId(null);
@@ -159,6 +165,55 @@ export function ApiKeysModal({ isOpen, onClose }: ApiKeysModalProps) {
           <p className="text-[8px] text-[#555] font-mono mt-2 leading-relaxed">
             This key identifies you across all built-in AI providers. Requests are proxied through our server using enterprise-managed credentials.
           </p>
+        </div>
+
+        {/* OpenRouter Key Section */}
+        <div className="border-t border-[#1f2235] pt-5 mb-4">
+          <div className="flex items-center gap-2 text-[#E4E3E0] mb-2">
+            <Wifi className="w-5 h-5 text-[#5b5eff]" />
+            <h3 className="font-serif italic text-sm uppercase tracking-wider">OpenRouter Key</h3>
+          </div>
+          <p className="text-[10px] text-[#555] font-mono uppercase tracking-widest mb-5">
+            Route all model requests through OpenRouter. Leave empty to use the built-in proxy.
+          </p>
+
+          <div className="bg-[#0a0a0a] border border-[#5b5eff]/30 p-4 mb-4 rounded-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[9px] font-mono text-[#5b5eff] uppercase tracking-widest font-bold">API Key</span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setOrKeyRevealed(r => !r)}
+                  className="p-1 text-[#555] hover:text-[#888]"
+                >
+                  {orKeyRevealed ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                </button>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(openRouterKey);
+                    setOrKeyCopied(true);
+                    setTimeout(() => setOrKeyCopied(false), 2000);
+                  }}
+                  className="flex items-center gap-1 text-[9px] font-mono text-[#888] hover:text-[#5b5eff] transition-colors"
+                >
+                  {orKeyCopied ? <Check className="w-3 h-3 text-[#5b5eff]" /> : <Copy className="w-3 h-3" />}
+                  <span>{orKeyCopied ? 'COPIED' : 'COPY'}</span>
+                </button>
+              </div>
+            </div>
+            <input
+              type={orKeyRevealed ? 'text' : 'password'}
+              value={openRouterKey}
+              onChange={(e) => {
+                setOpenRouterKey(e.target.value);
+                localStorage.setItem('openrouter_api_key', e.target.value);
+              }}
+              placeholder="sk-or-v1-..."
+              className="w-full bg-[#0c0d12] border border-[#1f2235] px-3 py-2.5 text-xs text-[#E4E3E0] font-mono tracking-wider focus:outline-none focus:border-[#5b5eff]"
+            />
+            <p className="text-[8px] text-[#555] font-mono mt-2 leading-relaxed">
+              Get your key from <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-[#5b5eff] hover:underline">openrouter.ai/keys</a>. Requests are sent directly from your browser.
+            </p>
+          </div>
         </div>
 
         {/* Custom Providers Section */}
