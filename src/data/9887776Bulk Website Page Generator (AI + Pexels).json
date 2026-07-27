@@ -1,0 +1,459 @@
+{
+  "name": "Bulk Website Page Generator (AI + Pexels)",
+  "nodes": [
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an expert web copywriter and SEO specialist. Create website page content for this site.\n\nBusiness type: {{ $json[\"Business Type\"] }}\nPages needed: {{ $json[\"Pages Needed\"] }}\nDesired tone: {{ $json[\"Tone\"] }}\n\nInstructions:\n- Produce exactly one entry for each page listed in \"Pages needed\".\n- For each page return: title (the page name), slug (lowercase, hyphenated, url-safe), and content.\n- content must be clean semantic HTML using only <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em> tags. Do NOT wrap it in a code block or markdown.\n- Write substantive, specific copy tailored to the business type, in the requested tone. Avoid generic filler.\n- Do not use long dashes.\nReturn the result strictly matching the required JSON structure.",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are an expert web copywriter and SEO specialist. You generate clean, semantic HTML website page content and always return output strictly matching the required JSON structure (an array of pages, each with title, slug, and content)."
+        }
+      },
+      "id": "8f09ec38-8a32-4f35-bf27-105bd1956c57",
+      "name": "Generate Pages AI",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        384,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "482a8ad8-f32c-4f18-8db8-0b7628eba297",
+      "name": "Gemini Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        264,
+        392
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": null,
+          "name": "n8n credits",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "[{\"title\":\"Home\",\"slug\":\"home\",\"content\":\"<h2>Welcome</h2><p>Intro paragraph.</p>\"},{\"title\":\"About\",\"slug\":\"about\",\"content\":\"<h2>About us</h2><p>Our story.</p>\"}]"
+      },
+      "id": "c6906935-af24-4cc7-b335-3ccb1dd6ecdb",
+      "name": "Parse Pages",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        648,
+        392
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.pexels.com/v1/search?query={{ encodeURIComponent($json.title) }}&per_page=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "b41f5c36-2676-4028-92d3-41f3f05faa64",
+      "name": "Search Pexels Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        912,
+        464
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "HPyAKempJ0szyVSG",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dreammakerhub.website/api/pages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"title\": $(\"Split Pages\").item.json.title, \"slug\": $(\"Split Pages\").item.json.slug, \"body_html\": $(\"Split Pages\").item.json.content, \"cover_image_url\": $(\"Search Pexels Image\").item.json.photos[0].src.large2x } }}",
+        "options": {}
+      },
+      "id": "5937119e-3495-409e-95ec-89e5966255c3",
+      "name": "Create Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1872,
+        320
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "So3WRcvhvoyNidRS",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "contextWindowLength": 300
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryMongoDbChat",
+      "typeVersion": 1.1,
+      "position": [
+        392,
+        392
+      ],
+      "id": "4caf2892-d65d-47f9-915a-f9f7722ecb63",
+      "name": "MongoDB Chat Memory"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1648,
+        320
+      ],
+      "id": "f59cd2ec-4572-4023-b1bf-04a7bc6040f7",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1200,
+        320
+      ],
+      "id": "9ff6a02b-7a4b-4711-bb69-5f2c34e6f4d7",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "path": "7e283f5c-2f06-4a4f-a3cf-2e92a406782f",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -640,
+        176
+      ],
+      "id": "b236e480-961d-41ee-805c-829134d3965d",
+      "name": "Webhook",
+      "webhookId": "7e283f5c-2f06-4a4f-a3cf-2e92a406782f",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "HPyAKempJ0szyVSG",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "load",
+        "tableName": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        848,
+        64
+      ],
+      "id": "90a05617-4db8-4802-9fbb-d96a26f0adbf",
+      "name": "Supabase Vector Store"
+    },
+    {
+      "parameters": {
+        "resource": "__CUSTOM_API_CALL__"
+      },
+      "type": "n8n-nodes-chat-data.chatData",
+      "typeVersion": 1,
+      "position": [
+        32,
+        176
+      ],
+      "id": "cea3409d-e4c7-4172-bd07-0489c9815a8a",
+      "name": "Chat Data",
+      "credentials": {
+        "chatDataApi": {
+          "id": "1ShNhKJPmYXosEVq",
+          "name": "Chat Data account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        520,
+        392
+      ],
+      "id": "245ae413-537f-4393-a8ea-6adbce4d8ef4",
+      "name": "Code Tool"
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1.3,
+      "position": [
+        1424,
+        320
+      ],
+      "id": "9db8a23b-f403-4e7f-9926-771c2f0358f5",
+      "name": "Chat",
+      "webhookId": "ce77559b-ee3b-4fc7-8569-6c17bc5c3bb0"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -416,
+        176
+      ],
+      "id": "6e0bf345-e0a3-498a-8bb5-e5895ec60ba9",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1.3,
+      "position": [
+        -192,
+        176
+      ],
+      "id": "ff077c3b-77ed-458f-bcfc-33b99561e4e0",
+      "name": "Chat1",
+      "webhookId": "892ae01c-7814-4e82-af7a-42adb9c3bd21"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "nvidia/llama-3.2-nv-embedqa-1b-v2"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsNvidia",
+      "typeVersion": 1,
+      "position": [
+        920,
+        296
+      ],
+      "id": "f3893ce2-e2da-4b37-882a-7ea637e68ed2",
+      "name": "NVIDIA Nemotron Embeddings"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Generate Pages AI": {
+      "main": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Pages AI",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Pages": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Generate Pages AI",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Pexels Image": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Page": {
+      "main": [
+        []
+      ]
+    },
+    "MongoDB Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Generate Pages AI",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Create Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Pages AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Generate Pages AI",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Chat1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat1": {
+      "main": [
+        [
+          {
+            "node": "Chat Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NVIDIA Nemotron Embeddings": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "349649d8-34cf-49fc-9036-483c2b995b60",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c0ff57df3b0039d3fa6589fc13ac40e307facc1f849bc428449f5ff9df1bd99f"
+  },
+  "nodeGroups": [],
+  "id": "cJTLNZPeO0H1w7P5",
+  "tags": []
+}

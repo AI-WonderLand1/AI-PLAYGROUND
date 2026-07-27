@@ -1,0 +1,380 @@
+{
+  "name": "Bulk Website Page Generator (AI + Pexels)",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Generate Website Pages",
+        "formDescription": "Describe the site and list the pages you want. AI will draft each page and publish it to your site.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Business Type",
+              "placeholder": "e.g. Boutique yoga studio",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Pages Needed",
+              "placeholder": "Comma-separated, e.g. Home, About, Classes, Contact",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Tone",
+              "placeholder": "e.g. Warm and welcoming",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "appendAttribution": false,
+          "buttonLabel": "Generate",
+          "path": "generate-pages"
+        }
+      },
+      "id": "737ed564-6b96-4eef-943e-31f362faf1f0",
+      "name": "Site Brief Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        192
+      ],
+      "webhookId": "b244afec-34be-4eb9-84f8-a6546018f147"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an expert web copywriter and SEO specialist. Create website page content for this site.\n\nBusiness type: {{ $json[\"Business Type\"] }}\nPages needed: {{ $json[\"Pages Needed\"] }}\nDesired tone: {{ $json[\"Tone\"] }}\n\nInstructions:\n- Produce exactly one entry for each page listed in \"Pages needed\".\n- For each page return: title (the page name), slug (lowercase, hyphenated, url-safe), and content.\n- content must be clean semantic HTML using only <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em> tags. Do NOT wrap it in a code block or markdown.\n- Write substantive, specific copy tailored to the business type, in the requested tone. Avoid generic filler.\n- Do not use long dashes.\nReturn the result strictly matching the required JSON structure.",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are an expert web copywriter and SEO specialist. You generate clean, semantic HTML website page content and always return output strictly matching the required JSON structure (an array of pages, each with title, slug, and content)."
+        }
+      },
+      "id": "8f09ec38-8a32-4f35-bf27-105bd1956c57",
+      "name": "Generate Pages AI",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        288,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "482a8ad8-f32c-4f18-8db8-0b7628eba297",
+      "name": "Gemini Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        232,
+        312
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": null,
+          "name": "n8n credits",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "[{\"title\":\"Home\",\"slug\":\"home\",\"content\":\"<h2>Welcome</h2><p>Intro paragraph.</p>\"},{\"title\":\"About\",\"slug\":\"about\",\"content\":\"<h2>About us</h2><p>Our story.</p>\"}]"
+      },
+      "id": "c6906935-af24-4cc7-b335-3ccb1dd6ecdb",
+      "name": "Parse Pages",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        488,
+        312
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.pexels.com/v1/search?query={{ encodeURIComponent($json.title) }}&per_page=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "b41f5c36-2676-4028-92d3-41f3f05faa64",
+      "name": "Search Pexels Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        752,
+        720
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "HPyAKempJ0szyVSG",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dreammakerhub.website/api/pages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"title\": $(\"Split Pages\").item.json.title, \"slug\": $(\"Split Pages\").item.json.slug, \"body_html\": $(\"Split Pages\").item.json.content, \"cover_image_url\": $(\"Search Pexels Image\").item.json.photos[0].src.large2x } }}",
+        "options": {}
+      },
+      "id": "5937119e-3495-409e-95ec-89e5966255c3",
+      "name": "Create Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1488,
+        528
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "So3WRcvhvoyNidRS",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "contextWindowLength": 300
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryMongoDbChat",
+      "typeVersion": 1.1,
+      "position": [
+        360,
+        312
+      ],
+      "id": "4caf2892-d65d-47f9-915a-f9f7722ecb63",
+      "name": "MongoDB Chat Memory"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        528
+      ],
+      "id": "f59cd2ec-4572-4023-b1bf-04a7bc6040f7",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1040,
+        512
+      ],
+      "id": "9ff6a02b-7a4b-4711-bb69-5f2c34e6f4d7",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "path": "7e283f5c-2f06-4a4f-a3cf-2e92a406782f",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        352,
+        480
+      ],
+      "id": "b236e480-961d-41ee-805c-829134d3965d",
+      "name": "Webhook",
+      "webhookId": "7e283f5c-2f06-4a4f-a3cf-2e92a406782f",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "HPyAKempJ0szyVSG",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "load",
+        "tableName": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        688,
+        336
+      ],
+      "id": "90a05617-4db8-4802-9fbb-d96a26f0adbf",
+      "name": "Supabase Vector Store"
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1.3,
+      "position": [
+        752,
+        528
+      ],
+      "id": "09bb1e2f-789b-49bb-a1e0-1628f908e334",
+      "name": "Chat",
+      "webhookId": "9d790588-a993-4d14-bb54-cd3146e0ec95"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Site Brief Form": {
+      "main": [
+        [
+          {
+            "node": "Generate Pages AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Pages AI": {
+      "main": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Pages AI",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Pages": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Generate Pages AI",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Pexels Image": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Create Page": {
+      "main": [
+        []
+      ]
+    },
+    "MongoDB Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Generate Pages AI",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Create Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Chat": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "f2b4f436-38e0-4b89-9ed2-890c2b9d8504",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c0ff57df3b0039d3fa6589fc13ac40e307facc1f849bc428449f5ff9df1bd99f"
+  },
+  "nodeGroups": [],
+  "id": "cJTLNZPeO0H1w7P5",
+  "tags": []
+}
