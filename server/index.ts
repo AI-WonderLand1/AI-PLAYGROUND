@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { validateWonderlandKey } from './wonderland-keys';
 import { callModel, callModelStreaming } from './providers/registry';
+import templateRouter from './template-library';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,6 +24,7 @@ if (process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY) {
 }
 
 app.use(express.json());
+app.use('/api/templates', templateRouter);
 
 app.post('/api/chat', async (req, res) => {
   const { model, messages, config, wonderlandKey } = req.body;
