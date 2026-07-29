@@ -7,7 +7,7 @@ export interface WorkflowTemplate {
     id: string;
     type: string;
     label: string;
-    category: string;
+    category: 'trigger' | 'app' | 'core' | 'ai' | 'dream_maker' | 'storage' | 'ai_models' | 'output_parsers' | 'ai_tools';
     x: number;
     y: number;
     config?: Record<string, any>;

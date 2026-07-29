@@ -46,6 +46,7 @@ interface AIWonderCanvasProps {
   onDismissEvent: (id: string) => void;
    currentTab?: 'aiwonder' | 'training' | 'creation';
   onTabChange?: (tab: 'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings') => void;
+  pendingN8nImport?: { name: string; webhookUrl: string } | null;
 }
 
 // Helper: convert schedule interval string to milliseconds
@@ -126,7 +127,8 @@ export function AIWonderCanvas({
   onClearEvents,
   onDismissEvent,
   currentTab = 'aiwonder',
-  onTabChange
+  onTabChange,
+  pendingN8nImport
 }: AIWonderCanvasProps) {
   // Navigation sidebar state (dashboard level)
   const [activeSidebarTab, setActiveSidebarTab] = useState<'workflows' | 'templates' | 'credentials' | 'executions' | 'variables' | 'insights' | 'memory' | 'versions'>('workflows');
@@ -575,10 +577,17 @@ export function AIWonderCanvas({
         const template: WorkflowTemplate = JSON.parse(templateData);
         pushHistory();
         const newNodes: WorkflowNode[] = template.nodes.map((n, i) => ({
-          ...n,
           id: `${n.type}-${Math.random().toString(36).substr(2, 9)}`,
+          type: n.type,
+          category: n.category,
+          label: n.label,
           x: dropX + (n.x || 0) + i * 20,
           y: dropY + (n.y || 0) + i * 20,
+          config: {
+            title: n.label,
+            description: `Imported from drag template`,
+            ...(n.config as any || {}),
+          },
         }));
         setNodes(prev => [...prev, ...newNodes]);
         showNotification(`Imported template: ${template.name}`);
@@ -619,6 +628,42 @@ export function AIWonderCanvas({
       setMemoryFormContent(activeMemoryNode.content);
     }
   }, [activeMemoryNode]);
+
+  // Import n8n template as a node on the canvas
+  useEffect(() => {
+    if (pendingN8nImport?.name) {
+      pushHistory();
+      const nodeId = `n8n_tool-${Math.random().toString(36).substr(2, 9)}`;
+      const spawnX = Math.round(200 - panX / scale);
+      const spawnY = Math.round(200 - panY / scale);
+      const newNode: WorkflowNode = {
+        id: nodeId,
+        type: 'n8n_tool',
+        category: 'ai_tools',
+        label: `n8n: ${pendingN8nImport.name}`,
+        x: spawnX,
+        y: spawnY,
+        config: {
+          title: pendingN8nImport.name,
+          description: `n8n workflow: ${pendingN8nImport.name}`,
+          n8nWebhookUrl: pendingN8nImport.webhookUrl || '',
+          n8nApiKey: '',
+          mockInputs: { payload: '{}' },
+          mockOutputs: { status: 'success' },
+        },
+      };
+      setNodes(prev => [...prev, newNode]);
+      if (nodes.length >= 1 && nodes[0].category === 'trigger') {
+        setConnections(prev => [...prev, {
+          id: `conn-${Math.random().toString(36).substr(2, 9)}`,
+          fromId: nodes[0].id,
+          toId: nodeId,
+        }]);
+      }
+      showNotification(`Loaded n8n template: ${pendingN8nImport.name}`);
+    }
+  }, [pendingN8nImport?.name]);
+
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -922,6 +967,10 @@ export function AIWonderCanvas({
             { value: 'B', label: 'Case B' },
           ],
           switchOperator: 'equals',
+        } : {}),
+        ...(type === 'n8n_tool' ? {
+          n8nWebhookUrl: '',
+          n8nApiKey: '',
         } : {}),
         ...(type === 'confessionsAi' ? {
           conditionOperator: 'standard' as any,
@@ -2036,7 +2085,34 @@ export function AIWonderCanvas({
                 [nodeId]: { status: 'success', output: `API Call to ${node.type} successful. Payload processed.`, timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔌 ${node.label} — integrated app response ok (${Date.now() - nodeStart}ms)`]);
-            } else if (node.type === 'calculator' || node.type === 'n8n_tool' || node.type === 'code_tool' || node.type === 'gmail_tool' || node.type === 'calendar_tool' || node.type === 'docs_tool' || node.type === 'sheets_tool' || node.type === 'http_tool' || node.type === 'mcp_client' || node.type === 'postgres_tool' || node.type === 'redis_tool' || node.type === 'send_email' || node.type === 'serpapi' || node.type === 'wikipedia' || node.type === 'wolfram_alpha') {
+            } else if (node.type === 'n8n_tool') {
+              const webhookUrl = cfg.n8nWebhookUrl || '';
+              if (!webhookUrl) {
+                setNodeOutputs(prev => ({
+                  ...prev,
+                  [nodeId]: { status: 'error', output: '', timestamp: Date.now(), duration: Date.now() - nodeStart, error: 'No n8n webhook URL configured' }
+                }));
+                setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ ${node.label} — no webhook URL configured (${Date.now() - nodeStart}ms)`]);
+              } else {
+                try {
+                  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+                  if (cfg.n8nApiKey) headers['Authorization'] = `Bearer ${cfg.n8nApiKey}`;
+                  const resp = await fetch(webhookUrl, { method: 'POST', headers, body: input });
+                  const text = await resp.text();
+                  setNodeOutputs(prev => ({
+                    ...prev,
+                    [nodeId]: { status: resp.ok ? 'success' : 'error', output: text, timestamp: Date.now(), duration: Date.now() - nodeStart, error: resp.ok ? undefined : `HTTP ${resp.status}` }
+                  }));
+                  setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔧 ${node.label} — n8n workflow ${resp.ok ? 'completed' : 'failed'} (${resp.status}, ${Date.now() - nodeStart}ms)`]);
+                } catch (fetchErr: any) {
+                  setNodeOutputs(prev => ({
+                    ...prev,
+                    [nodeId]: { status: 'error', output: '', timestamp: Date.now(), duration: Date.now() - nodeStart, error: fetchErr.message }
+                  }));
+                  setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ ${node.label} — n8n call failed: ${fetchErr.message} (${Date.now() - nodeStart}ms)`]);
+                }
+              }
+            } else if (node.type === 'calculator' || node.type === 'code_tool' || node.type === 'gmail_tool' || node.type === 'calendar_tool' || node.type === 'docs_tool' || node.type === 'sheets_tool' || node.type === 'http_tool' || node.type === 'mcp_client' || node.type === 'postgres_tool' || node.type === 'redis_tool' || node.type === 'send_email' || node.type === 'serpapi' || node.type === 'wikipedia' || node.type === 'wolfram_alpha') {
               setNodeOutputs(prev => ({
                 ...prev,
                 [nodeId]: { status: 'success', output: `Tool ${node.label} executed with input: ${input.slice(0, 20)}...`, timestamp: Date.now(), duration: Date.now() - nodeStart }
@@ -3317,22 +3393,28 @@ Respond ONLY in JSON matching this format:
                   const isSelected = selectedNode?.id === node.id || selectedLogNodeId === node.id || selectedNodeIds.has(node.id);
                   
                   // Styling colors per category
-                  const CATEGORY_STYLES = {
+                  const CATEGORY_STYLES: Record<string, string> = {
                     trigger: 'border-l-4 border-l-[#5b5eff] border-[#1e2235]/60 hover:border-[#5b5eff]/70 bg-[#0c0d16]',
                     app: 'border-l-4 border-l-[#ffad33] border-[#1e2235]/60 hover:border-[#ffad33]/70 bg-[#0e0d14]',
                     core: 'border-l-4 border-l-[#00e5a0] border-[#1e2235]/60 hover:border-[#00e5a0]/70 bg-[#090f12]',
                     ai: 'border-l-4 border-l-[#b04cff] border-[#1e2235]/60 hover:border-[#b04cff]/70 bg-[#0d0c15]',
                     dream_maker: 'border-l-4 border-l-[#b8ff57] border-[#1e2235]/60 hover:border-[#b8ff57]/70 bg-[#0a0f0d]',
-                    storage: 'border-l-4 border-l-[#38c8ff] border-[#1e2235]/60 hover:border-[#38c8ff]/70 bg-[#0c121a]'
+                    storage: 'border-l-4 border-l-[#38c8ff] border-[#1e2235]/60 hover:border-[#38c8ff]/70 bg-[#0c121a]',
+                    ai_models: 'border-l-4 border-l-[#ff4560] border-[#1e2235]/60 hover:border-[#ff4560]/70 bg-[#0d0a12]',
+                    output_parsers: 'border-l-4 border-l-[#b8ff57] border-[#1e2235]/60 hover:border-[#b8ff57]/70 bg-[#0a0f0d]',
+                    ai_tools: 'border-l-4 border-l-[#ffad33] border-[#1e2235]/60 hover:border-[#ffad33]/70 bg-[#0e0d14]',
                   };
 
-                  const CATEGORY_DOTS = {
+                  const CATEGORY_DOTS: Record<string, string> = {
                     trigger: 'bg-[#5b5eff]',
                     app: 'bg-[#ffad33]',
                     core: 'bg-[#00e5a0]',
                     ai: 'bg-[#b04cff]',
                     dream_maker: 'bg-[#b8ff57]',
-                    storage: 'bg-[#38c8ff]'
+                    storage: 'bg-[#38c8ff]',
+                    ai_models: 'bg-[#ff4560]',
+                    output_parsers: 'bg-[#b8ff57]',
+                    ai_tools: 'bg-[#ffad33]',
                   };
 
                   return (
@@ -4407,6 +4489,39 @@ Respond ONLY in JSON matching this format:
                       className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white"
                     />
                   </div>
+                )}
+
+                {/* n8n Tool config */}
+                {selectedNode.type === 'n8n_tool' && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">n8n Webhook URL</label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.n8nWebhookUrl || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, n8nWebhookUrl: e.target.value }
+                        })}
+                        placeholder="https://your-n8n.example.com/webhook/..."
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                      <p className="text-[8px] text-[#4a5068]">Data from upstream will be POSTed to this n8n webhook endpoint.</p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-[#ffad33] uppercase font-bold">n8n API Key (optional)</label>
+                      <input
+                        type="password"
+                        value={selectedNode.config.n8nApiKey || ''}
+                        onChange={(e) => setSelectedNode({
+                          ...selectedNode,
+                          config: { ...selectedNode.config, n8nApiKey: e.target.value }
+                        })}
+                        placeholder="Leave blank if unauthenticated"
+                        className="w-full bg-[#141624] border border-[#1f2235] rounded text-xs px-3 py-2 text-white font-mono"
+                      />
+                    </div>
+                  </>
                 )}
 
                 {/* Code node sandbox */}

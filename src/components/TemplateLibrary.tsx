@@ -1,11 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { LibTemplate, loadLocalState, saveLocalState } from '../data/templateLibrary';
 import { cn } from '../utils';
-import { Globe, Lock, Plus, Trash2, CheckCircle, Circle, Download, Eye } from 'lucide-react';
+import { Globe, Lock, Plus, Trash2, CheckCircle, Circle, Download, Eye, ArrowRight } from 'lucide-react';
 
 const API = '/api/templates';
 
-export function TemplateLibrary() {
+interface TemplateLibraryProps {
+  onLoadToCanvas?: (data: { name: string; webhookUrl: string }) => void;
+}
+
+export function TemplateLibrary({ onLoadToCanvas }: TemplateLibraryProps) {
   const [templates, setTemplates] = useState<LibTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [localState, setLocalState] = useState<Record<string, any>>({});
@@ -60,6 +64,29 @@ export function TemplateLibrary() {
   const previewTemplate = async (file: string) => {
     const res = await fetch(API + '/' + encodeURIComponent(file));
     if (res.ok) setPreview({ file, content: await res.json() });
+  };
+
+  const loadToCanvas = async (file: string, name: string) => {
+    try {
+      const res = await fetch(API + '/' + encodeURIComponent(file));
+      if (!res.ok) return;
+      const data = await res.json();
+      let webhookUrl = '';
+      if (data.nodes) {
+        const webhookNode = data.nodes.find((n: any) =>
+          n.type === 'n8n-nodes-base.webhook' || n.type === 'n8n-nodes-base.formTrigger'
+        );
+        if (webhookNode?.parameters?.path) {
+          const domain = webhookNode.parameters.options?.domain || '';
+          webhookUrl = domain
+            ? `${domain}/webhook/${webhookNode.parameters.path}`
+            : `/webhook/${webhookNode.parameters.path}`;
+        }
+      }
+      onLoadToCanvas?.({ name: data.name || name, webhookUrl });
+    } catch (e) {
+      console.error('Failed to load template to canvas', e);
+    }
   };
 
   const downloadTemplate = (file: string) => {
@@ -191,6 +218,11 @@ export function TemplateLibrary() {
           <button onClick={() => downloadTemplate(tpl.file)} className="text-[9px] font-mono text-[#5b5eff] hover:text-white flex items-center gap-1">
             <Download className="w-2.5 h-2.5" /> Download
           </button>
+          {onLoadToCanvas && (
+            <button onClick={() => loadToCanvas(tpl.file, tpl.name)} className="text-[9px] font-mono text-[#b8ff57] hover:text-white flex items-center gap-1">
+              <ArrowRight className="w-2.5 h-2.5" /> Load to Canvas
+            </button>
+          )}
           <button onClick={() => setActiveTodoFile(activeTodoFile === tpl.file ? null : tpl.file)} className="text-[9px] font-mono text-[#5b5eff] hover:text-white flex items-center gap-1">
             <CheckCircle className="w-2.5 h-2.5" /> Todo ({tpl.todo.length})
           </button>

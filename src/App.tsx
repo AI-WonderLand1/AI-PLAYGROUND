@@ -82,6 +82,7 @@ export default function App() {
   const [isFocused, setIsFocused] = useState(false);
   const topSearchRef = useRef<HTMLInputElement>(null);
   const [masterKeyShort, setMasterKeyShort] = useState('');
+  const [pendingN8nImport, setPendingN8nImport] = useState<{ name: string; webhookUrl: string } | null>(null);
 
   useEffect(() => {
     async function initAuth() {
@@ -582,6 +583,7 @@ export default function App() {
             onDismissEvent={handleDismissEvent}
             currentTab={currentTab}
             onTabChange={setCurrentTab}
+            pendingN8nImport={pendingN8nImport}
           />
         )}
 
@@ -661,7 +663,13 @@ export default function App() {
 
         {/* Template Library Tab View */}
         {currentTab === 'templates' && (
-          <TemplateLibrary />
+          <TemplateLibrary
+            onLoadToCanvas={(data) => {
+              setPendingN8nImport(data);
+              setCurrentTab('aiwonder');
+              setTimeout(() => setPendingN8nImport(null), 500);
+            }}
+          />
         )}
 
       </div>

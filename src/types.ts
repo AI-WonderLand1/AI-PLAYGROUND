@@ -111,7 +111,7 @@ export interface NexusEvent {
 export interface WorkflowNode {
   id: string;
   type: string;
-  category: 'trigger' | 'app' | 'core' | 'ai' | 'dream_maker' | 'storage';
+  category: 'trigger' | 'app' | 'core' | 'ai' | 'dream_maker' | 'storage' | 'ai_models' | 'output_parsers' | 'ai_tools';
   label: string;
   x: number;
   y: number;
@@ -152,6 +152,8 @@ export interface WorkflowNode {
     splitMode?: 'first' | 'all';
     buffer?: string;
     query?: string;
+    n8nWebhookUrl?: string;
+    n8nApiKey?: string;
   };
   memoryId?: string;
   useInTrainingSet?: boolean;
