@@ -83,7 +83,7 @@ export interface PlaygroundConfig {
 }
 
 export interface Message {
-  role: 'user' | 'model';
+  role: 'user' | 'assistant';
   content: string;
   timestamp: number;
 }
@@ -96,10 +96,23 @@ export interface MemoryNode {
   ts: number;
 }
 
+export type NexusEventType =
+  | 'js_error'
+  | 'unhandled_promise'
+  | 'network'
+  | 'broken_link'
+  | 'missing_asset'
+  | 'html_issue'
+  | 'css_issue'
+  | 'react_error'
+  | 'ts_error';
+
+export type NexusEventSeverity = 'error' | 'warning' | 'info';
+
 export interface NexusEvent {
   id: string;
-  type: string;
-  severity: 'error' | 'warning' | 'info';
+  type: NexusEventType;
+  severity: NexusEventSeverity;
   message: string;
   source?: string;
   line?: number;
@@ -164,7 +177,7 @@ export interface WorkflowConnection {
   fromId: string;
   toId: string;
   isTrainingEdge?: boolean;
-  fromPort?: string;
+  fromPort?: 'true' | 'false' | 'default' | string;
 }
 
 export interface Session {

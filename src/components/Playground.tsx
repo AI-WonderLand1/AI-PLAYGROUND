@@ -164,7 +164,7 @@ export function Playground({ module }: PlaygroundProps) {
             const decoder = new TextDecoder();
             let buffer = '';
 
-            setMessages(prev => [...prev, { role: 'model', content: '', timestamp: Date.now() }]);
+            setMessages(prev => [...prev, { role: 'assistant', content: '', timestamp: Date.now() }]);
             streamMsgAdded = true;
 
             while (true) {
@@ -203,7 +203,7 @@ export function Playground({ module }: PlaygroundProps) {
                   setMessages(prev => {
                     const updated = [...prev];
                     const last = updated[updated.length - 1];
-                    if (last && last.role === 'model') {
+                    if (last && last.role === 'assistant') {
                       updated[updated.length - 1] = { ...last, content: accumulated };
                     }
                     return updated;
@@ -259,7 +259,7 @@ export function Playground({ module }: PlaygroundProps) {
             let buffer = '';
 
             if (!streamMsgAdded) {
-              setMessages(prev => [...prev, { role: 'model', content: '', timestamp: Date.now() }]);
+              setMessages(prev => [...prev, { role: 'assistant', content: '', timestamp: Date.now() }]);
               streamMsgAdded = true;
             }
 
@@ -299,7 +299,7 @@ export function Playground({ module }: PlaygroundProps) {
                   setMessages(prev => {
                     const updated = [...prev];
                     const last = updated[updated.length - 1];
-                    if (last && last.role === 'model') {
+                    if (last && last.role === 'assistant') {
                       updated[updated.length - 1] = { ...last, content: accumulated };
                     }
                     return updated;
@@ -385,7 +385,7 @@ export function Playground({ module }: PlaygroundProps) {
         }
 
         setMessages(prev => [...prev, {
-          role: 'model',
+          role: 'assistant',
           content: imageUrl ? `![Generated Image](${imageUrl})` : "Failed to generate image.",
           timestamp: Date.now(),
         }]);
@@ -484,7 +484,7 @@ export function Playground({ module }: PlaygroundProps) {
         )}
 
         {messages.map((msg, idx) => {
-          const isLastModelStreaming = isStreaming && msg.role === 'model' && idx === messages.length - 1;
+          const isLastModelStreaming = isStreaming && msg.role === 'assistant' && idx === messages.length - 1;
           return (
           <div 
             key={idx} 
