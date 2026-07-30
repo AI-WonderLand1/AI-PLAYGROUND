@@ -405,31 +405,31 @@ export function Playground({ module }: PlaygroundProps) {
 
         const resultText = response.text || "No response received.";
 
-        setMessages(prev => [...prev, {
-          role: 'model',
-          content: resultText,
-          timestamp: Date.now(),
-        }]);
+setMessages(prev => [...prev, {
+  role: 'assistant',
+  content: resultText,
+  timestamp: Date.now(),
+}]);
 
         setIsSpeaking(true);
         safeTimeout(() => setIsSpeaking(false), 3000);
       } else if (finalModelResponse && !streamMsgAdded) {
-        setMessages(prev => [...prev, {
-          role: 'model',
-          content: finalModelResponse,
-          timestamp: Date.now(),
-        }]);
+setMessages(prev => [...prev, {
+  role: 'assistant',
+  content: finalModelResponse,
+  timestamp: Date.now(),
+}]);
 
         setIsSpeaking(true);
         safeTimeout(() => setIsSpeaking(false), 3000);
       }
     } catch (error) {
       console.error("AI Error:", error);
-      setMessages(prev => [...prev, {
-        role: 'model',
-        content: "Error: " + (error instanceof Error ? error.message : "Unknown error"),
-        timestamp: Date.now(),
-      }]);
+setMessages(prev => [...prev, {
+  role: 'assistant',
+  content: "Error: " + (error instanceof Error ? error.message : "Unknown error"),
+  timestamp: Date.now(),
+}]);
     } finally {
       setIsLoading(false);
     }
@@ -497,7 +497,7 @@ export function Playground({ module }: PlaygroundProps) {
               <span className="text-[8px] font-mono text-[#444] uppercase tracking-widest">
                 {msg.role === 'user' ? 'Input' : 'Response'}
               </span>
-              {msg.role === 'model' && msg.content && usageInfo && !isStreaming && idx === messages.length - 1 && (
+              {msg.role === 'assistant' && msg.content && usageInfo && !isStreaming && idx === messages.length - 1 && (
                 <span className="text-[8px] font-mono text-[#555]">
                   ↑ {usageInfo.prompt_tokens ?? '?'} · ↓ {usageInfo.completion_tokens ?? '?'} · {usageInfo.total_tokens ?? '?'}t{usageInfo.cost ? ` · $${usageInfo.cost.toFixed(6)}` : ''}
                 </span>
