@@ -27,16 +27,17 @@ export function useRealtimeUsage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let channel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
 
     async function init() {
       const session = await getSession();
-      if (!session?.user) {
+      if (!session?.user || !supabase) {
         setLoading(false);
         return;
       }
 
-      const { data: logs } = await supabase
+      const db = supabase;
+      const { data: logs } = await db
         .from('usage_logs')
         .select('*')
         .eq('user_id', session.user.id)
@@ -45,7 +46,7 @@ export function useRealtimeUsage() {
 
       if (logs) processLogs(logs);
 
-      channel = supabase
+      channel = db
         .channel('usage-realtime')
         .on(
           'postgres_changes',

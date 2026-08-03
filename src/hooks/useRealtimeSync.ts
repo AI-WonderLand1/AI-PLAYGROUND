@@ -50,7 +50,7 @@ export function useRealtimeSync(callbacks: SyncCallbacks) {
   callbacksRef.current = callbacks;
 
   useEffect(() => {
-    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let channel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
     let mounted = true;
 
     async function init() {
@@ -60,14 +60,20 @@ export function useRealtimeSync(callbacks: SyncCallbacks) {
         return;
       }
 
+      if (!supabase) {
+        setLoading(false);
+        return;
+      }
+
+      const db = supabase;
       const uid = session.user.id;
       setUserId(uid);
 
       // Load initial data
       const [agentsRes, workflowsRes, memoriesRes] = await Promise.all([
-        supabase.from('agents').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
-        supabase.from('workflows').select('*').eq('user_id', uid).order('updated_at', { ascending: false }),
-        supabase.from('memories').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
+        db.from('agents').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
+        db.from('workflows').select('*').eq('user_id', uid).order('updated_at', { ascending: false }),
+        db.from('memories').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
       ]);
 
       if (mounted) {
@@ -77,13 +83,13 @@ export function useRealtimeSync(callbacks: SyncCallbacks) {
       }
 
       // Subscribe to realtime changes on all three tables
-      channel = supabase
+      channel = db
         .channel('cross-app-sync')
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'agents', filter: `user_id=eq.${uid}` },
           async () => {
-            const { data } = await supabase.from('agents').select('*').eq('user_id', uid).order('created_at', { ascending: false });
+            const { data } = await db.from('agents').select('*').eq('user_id', uid).order('created_at', { ascending: false });
             callbacksRef.current.onAgentsChange?.((data as SyncedAgent[]) || []);
           }
         )
@@ -91,7 +97,7 @@ export function useRealtimeSync(callbacks: SyncCallbacks) {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'workflows', filter: `user_id=eq.${uid}` },
           async () => {
-            const { data } = await supabase.from('workflows').select('*').eq('user_id', uid).order('updated_at', { ascending: false });
+            const { data } = await db.from('workflows').select('*').eq('user_id', uid).order('updated_at', { ascending: false });
             callbacksRef.current.onWorkflowsChange?.((data as SyncedWorkflow[]) || []);
           }
         )
@@ -99,7 +105,7 @@ export function useRealtimeSync(callbacks: SyncCallbacks) {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'memories', filter: `user_id=eq.${uid}` },
           async () => {
-            const { data } = await supabase.from('memories').select('*').eq('user_id', uid).order('created_at', { ascending: false });
+            const { data } = await db.from('memories').select('*').eq('user_id', uid).order('created_at', { ascending: false });
             callbacksRef.current.onMemoriesChange?.((data as SyncedMemory[]) || []);
           }
         )
@@ -117,7 +123,7 @@ export function useRealtimeSync(callbacks: SyncCallbacks) {
   }, []);
 
   const upsertAgent = useCallback(async (agent: Partial<SyncedAgent>) => {
-    if (!userId) return;
+    if (!userId || !supabase) return;
     const { data, error } = await supabase
       .from('agents')
       .upsert({ ...agent, user_id: userId })
@@ -128,7 +134,7 @@ export function useRealtimeSync(callbacks: SyncCallbacks) {
   }, [userId]);
 
   const deleteAgent = useCallback(async (agentId: string) => {
-    if (!userId) return;
+    if (!userId || !supabase) return;
     const { error } = await supabase
       .from('agents')
       .delete()
@@ -138,7 +144,7 @@ export function useRealtimeSync(callbacks: SyncCallbacks) {
   }, [userId]);
 
   const upsertWorkflow = useCallback(async (workflow: Partial<SyncedWorkflow>) => {
-    if (!userId) return;
+    if (!userId || !supabase) return;
     const { data, error } = await supabase
       .from('workflows')
       .upsert({ ...workflow, user_id: userId })
@@ -149,7 +155,7 @@ export function useRealtimeSync(callbacks: SyncCallbacks) {
   }, [userId]);
 
   const deleteWorkflow = useCallback(async (workflowId: string) => {
-    if (!userId) return;
+    if (!userId || !supabase) return;
     const { error } = await supabase
       .from('workflows')
       .delete()
@@ -159,7 +165,7 @@ export function useRealtimeSync(callbacks: SyncCallbacks) {
   }, [userId]);
 
   const upsertMemory = useCallback(async (memory: Partial<SyncedMemory>) => {
-    if (!userId) return;
+    if (!userId || !supabase) return;
     const { data, error } = await supabase
       .from('memories')
       .upsert({ ...memory, user_id: userId })
@@ -170,7 +176,7 @@ export function useRealtimeSync(callbacks: SyncCallbacks) {
   }, [userId]);
 
   const deleteMemory = useCallback(async (memoryId: string) => {
-    if (!userId) return;
+    if (!userId || !supabase) return;
     const { error } = await supabase
       .from('memories')
       .delete()

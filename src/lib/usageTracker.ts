@@ -14,6 +14,7 @@ export interface UsageEvent {
 
 export async function logUsage(event: UsageEvent) {
   try {
+    if (!supabase) return;
     const { error } = await supabase.from('usage_logs').insert({
       user_id: event.userId,
       agent_id: event.agentId,
