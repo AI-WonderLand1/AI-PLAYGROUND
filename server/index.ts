@@ -102,7 +102,7 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
-app.get('*', (_req, res) => {
+app.get('/*splat', (_req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
