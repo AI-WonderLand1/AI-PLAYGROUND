@@ -18,6 +18,9 @@ import { AgentCompiler } from './AgentCompiler';
 import { GoogleGenAI } from '@google/genai';
 import { WORKFLOW_TEMPLATES, WorkflowTemplate } from '../data/workflowTemplates';
 import { resolveExpressions, resolveConfig, ExpressionContext } from '../utils/expressionParser';
+import { getNodeSchema, DEFAULT_BASE_URL } from '../data/nodeSchemas';
+import { SchemaFields } from './nodes/SchemaField';
+import { loadCustomProviders } from '../lib/providers/registry';
 import cronParser from 'cron-parser';
 
 // Types for workflow node graph
@@ -1409,39 +1412,94 @@ export function AIWonderCanvas({
 
   // Execute a single AI node via OpenRouter
   const executeAINode = async (node: WorkflowNode, inputText: string): Promise<{ output: string; tokens?: number }> => {
-    const openrouterKey = localStorage.getItem('mc_key_openrouter');
-    const openrouterModel = getOpenRouterModel(node.config.model || '');
+    const cfg = node.config;
+    const mode = cfg.executionMode || 'model';
 
-    if (!openrouterKey || !openrouterModel) {
-      throw new Error(`No OpenRouter route for model ${node.config.model}`);
+    const postWebhook = async (payload: Record<string, any>): Promise<string> => {
+      const url = cfg.webhookUrl || cfg.n8nWebhookUrl || '';
+      if (!url) throw new Error('Webhook POST selected but no Webhook URL is set.');
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`Webhook HTTP ${res.status}`);
+      const body = await res.json().catch(() => ({}));
+      return typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+    };
+
+    if (mode === 'webhook') {
+      const out = await postWebhook({ input: inputText, node: node.label, type: node.type });
+      return { output: out };
     }
 
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    // Resolve credential source: custom on node > saved custom provider > global BYOK
+    const providerId = cfg.providerId || 'custom';
+    const globalKey = localStorage.getItem('mc_key_openrouter');
+    let apiKey = '';
+    let baseUrl = '';
+    let model = '';
+    let authStyle: 'bearer' | 'x-api-key' = 'bearer';
+
+    if (providerId === 'global') {
+      apiKey = globalKey || '';
+      baseUrl = DEFAULT_BASE_URL;
+      model = getOpenRouterModel(cfg.model || '') ?? '';
+    } else if (providerId.startsWith('provider:')) {
+      const saved = loadCustomProviders().find(p => p.id === providerId.slice('provider:'.length));
+      if (!saved) throw new Error(`Saved provider "${providerId}" not found.`);
+      apiKey = saved.apiKey || '';
+      baseUrl = saved.baseUrl || '';
+      model = cfg.model || saved.supportedModels[0] || '';
+      authStyle = saved.authStyle || 'bearer';
+    } else {
+      // Custom on this node (default) — falls back to global key if none entered
+      apiKey = cfg.providerApiKey || globalKey || '';
+      baseUrl = cfg.providerBaseUrl || DEFAULT_BASE_URL;
+      model = getOpenRouterModel(cfg.model || '') ?? '';
+      authStyle = cfg.providerAuthStyle || 'bearer';
+    }
+
+    if (!apiKey || !model) {
+      throw new Error(`No API key or model route for ${node.label}. Add a credential or the global OpenRouter key.`);
+    }
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authStyle === 'x-api-key') {
+      headers['x-api-key'] = apiKey;
+    } else {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    const res = await fetch(baseUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openrouterKey}`,
-      },
+      headers,
       body: JSON.stringify({
-        model: openrouterModel,
+        model,
         messages: [
-          ...(node.config.systemPrompt ? [{ role: 'system', content: node.config.systemPrompt }] : []),
+          ...(cfg.systemPrompt ? [{ role: 'system', content: cfg.systemPrompt }] : []),
           { role: 'user', content: inputText }
         ],
-        temperature: node.config.temperature ?? 0.7,
-        top_p: node.config.topP ?? 0.9,
-        max_tokens: node.config.maxTokens ?? 2048,
+        temperature: cfg.temperature ?? 0.7,
+        top_p: cfg.topP ?? 0.9,
+        max_tokens: cfg.maxTokens ?? 2048,
       }),
     });
 
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
-      throw new Error(errBody?.error?.message || `OpenRouter HTTP ${res.status}`);
+      throw new Error(errBody?.error?.message || `Model HTTP ${res.status}`);
     }
 
     const data = await res.json();
+    const output = data.choices?.[0]?.message?.content || data.content?.[0]?.text || 'Empty response received.';
+
+    if (mode === 'model_webhook') {
+      await postWebhook({ input: inputText, output, model, node: node.label, type: node.type });
+    }
+
     return {
-      output: data.choices?.[0]?.message?.content || 'Empty response received.',
+      output,
       tokens: data.usage?.total_tokens,
     };
   };
@@ -4399,6 +4457,23 @@ Respond ONLY in JSON matching this format:
                   </div>
                 </div>
 
+                {/* AI Node parameters — schema-driven (per-node provider / API key / webhook) */}
+                {getNodeSchema(selectedNode) && (
+                  <div className="pt-3 border-t border-[#1f2235]/20">
+                    <SchemaFields
+                      schema={getNodeSchema(selectedNode)!}
+                      config={selectedNode.config}
+                      onChange={(patch) => setSelectedNode({
+                        ...selectedNode,
+                        config: { ...selectedNode.config, ...patch }
+                      })}
+                    />
+                  </div>
+                )}
+
+                {/* Legacy node parameters — kept for node types not yet migrated to schemas */}
+                {!getNodeSchema(selectedNode) && (
+                <>
                 {/* AI Node parameters */}
                 {selectedNode.type === 'agent' && (
                   <>
@@ -5544,6 +5619,8 @@ Respond ONLY in JSON matching this format:
                       />
                     </div>
                   </>
+                )}
+                </>
                 )}
               </div>
 

@@ -167,6 +167,11 @@ export interface WorkflowNode {
     query?: string;
     n8nWebhookUrl?: string;
     n8nApiKey?: string;
+    providerId?: string;
+    providerBaseUrl?: string;
+    providerApiKey?: string;
+    providerAuthStyle?: 'bearer' | 'x-api-key';
+    executionMode?: 'model' | 'model_webhook' | 'webhook';
   };
   memoryId?: string;
   useInTrainingSet?: boolean;
