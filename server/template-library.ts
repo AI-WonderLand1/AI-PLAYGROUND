@@ -27,7 +27,9 @@ router.get('/', (_, res) => {
 
 router.get('/:file', (req, res) => {
   try {
-    const fp = path.join(DIR, req.params.file);
+    const safe = path.basename(req.params.file);
+    if (safe !== req.params.file || !safe.endsWith('.json')) { res.status(400).json({ error: 'invalid file name' }); return; }
+    const fp = path.join(DIR, safe);
     if (!fs.existsSync(fp)) { res.status(404).json({ error: 'not found' }); return; }
     res.json(JSON.parse(fs.readFileSync(fp, 'utf-8')));
   } catch (err: any) { res.status(500).json({ error: err.message }); }

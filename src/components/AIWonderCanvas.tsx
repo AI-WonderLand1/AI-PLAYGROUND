@@ -21,6 +21,37 @@ import { resolveExpressions, resolveConfig, ExpressionContext } from '../utils/e
 import { getNodeSchema, DEFAULT_BASE_URL } from '../data/nodeSchemas';
 import { SchemaFields } from './nodes/SchemaField';
 import { loadCustomProviders } from '../lib/providers/registry';
+import {
+  embedText,
+  cosineSimilarity,
+  loadVectorDocs,
+  upsertVectorDoc,
+  queryVectorDocs,
+  clearVectorDocs,
+  loadChatMemory,
+  appendChatMemory,
+  clearChatMemory,
+  saveChatMemory,
+  evalCalculator,
+  parseItems,
+  aggregateItems,
+  sortItems,
+  removeDuplicates,
+  editFields,
+  parseStructured,
+  repairJson,
+  applyUtility,
+  processDocument,
+  fetchWikipediaSummary,
+  fetchRssItems,
+  callPerplexity,
+  callPushbullet,
+  callSerpApi,
+  callWolframAlpha,
+  callYouTubeSearch,
+  callGithubIssue,
+  callWebhookIntegration,
+} from '../utils/nodeExec';
 import cronParser from 'cron-parser';
 
 // Types for workflow node graph
@@ -516,10 +547,10 @@ export function AIWonderCanvas({
             y: dropY,
             config: {
               title: 'Dropped Data',
-              description: 'Node created from dropped JSON data',
-              code: `const data = ${JSON.stringify(parsed, null, 2)};\nreturn JSON.stringify(data, null, 2);`,
-              mockInputs: { payload: JSON.stringify(parsed) },
-              mockOutputs: { status: 'success' },
+description: 'Node created from dropped JSON data',
+               code: `const data = ${JSON.stringify(parsed, null, 2)};\nreturn JSON.stringify(data, null, 2);`,
+               mockInputs: {},
+               mockOutputs: {},
             },
           };
           setNodes(prev => [...prev, newNode]);
@@ -537,13 +568,13 @@ export function AIWonderCanvas({
         label: 'Dropped Text',
         x: dropX,
         y: dropY,
-        config: {
-          title: 'Dropped Text',
-          description: 'Node created from dropped text',
-          code: `return ${JSON.stringify(textData)};`,
-          mockInputs: { payload: textData },
-          mockOutputs: { status: 'success' },
-        },
+config: {
+           title: 'Dropped Text',
+           description: 'Node created from dropped text',
+           code: `return ${JSON.stringify(textData)};`,
+           mockInputs: {},
+           mockOutputs: {},
+         },
       };
       setNodes(prev => [...prev, newNode]);
       showNotification('Dropped text as Code node');
@@ -561,12 +592,12 @@ export function AIWonderCanvas({
         label: file.name,
         x: dropX + i * 60,
         y: dropY + i * 40,
-        config: {
-          title: file.name,
-          description: `Dropped file: ${file.type || 'unknown type'} (${(file.size / 1024).toFixed(1)}KB)`,
-          mockInputs: { payload: file.name },
-          mockOutputs: { status: 'success' },
-        },
+config: {
+           title: file.name,
+           description: `Dropped file: ${file.type || 'unknown type'} (${(file.size / 1024).toFixed(1)}KB)`,
+           mockInputs: {},
+           mockOutputs: {},
+         },
       }));
       setNodes(prev => [...prev, ...newNodes]);
       showNotification(`Dropped ${files.length} file(s) as Document nodes`);
@@ -646,14 +677,14 @@ export function AIWonderCanvas({
         label: `n8n: ${pendingN8nImport.name}`,
         x: spawnX,
         y: spawnY,
-        config: {
-          title: pendingN8nImport.name,
-          description: `n8n workflow: ${pendingN8nImport.name}`,
-          n8nWebhookUrl: pendingN8nImport.webhookUrl || '',
-          n8nApiKey: '',
-          mockInputs: { payload: '{}' },
-          mockOutputs: { status: 'success' },
-        },
+config: {
+           title: pendingN8nImport.name,
+           description: `n8n workflow: ${pendingN8nImport.name}`,
+           n8nWebhookUrl: pendingN8nImport.webhookUrl || '',
+           n8nApiKey: '',
+           mockInputs: {},
+           mockOutputs: {},
+         },
       };
       setNodes(prev => [...prev, newNode]);
       if (nodes.length >= 1 && nodes[0].category === 'trigger') {
@@ -978,10 +1009,10 @@ export function AIWonderCanvas({
         ...(type === 'confessionsAi' ? {
           conditionOperator: 'standard' as any,
           conditionLeft: '={{ $json.content }}',
-        } : {}),
-        mockInputs: { payload: '{}' },
-        mockOutputs: { status: 'success' }
-      },
+} : {}),
+         mockInputs: {},
+         mockOutputs: {}
+       },
       memoryId: newMemoryId
     };
 
@@ -1136,12 +1167,12 @@ export function AIWonderCanvas({
         title: creationAgentName,
         description: `Compiled AI agent powered by ${creationBaseModel}. Web Search: ${creationToolWebSearch ? 'ENABLED' : 'DISABLED'}.`,
         model: creationBaseModel,
-        systemPrompt: creationSystemPrompt,
-        temperature: 0.7,
-        maxTokens: 2048,
-        mockInputs: { query: 'Ingest training resources' },
-        mockOutputs: { response: 'Ingested context successfully!' }
-      }
+systemPrompt: creationSystemPrompt,
+         temperature: 0.7,
+         maxTokens: 2048,
+         mockInputs: {},
+         mockOutputs: {}
+       }
     };
 
     setNodes(prev => [...prev, newAgentNode]);
@@ -1750,35 +1781,34 @@ export function AIWonderCanvas({
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🪟 ${node.label} — buffered input (${Date.now() - nodeStart}ms)`]);
           } else if (node.category === 'storage' && node.type === 'vector_store') {
-            // Vector Store - mock storing and retrieving vectors
-            const rows = Math.max(1, Math.floor(input.length / 100));
-            const items = Array.from({length: rows}, (_, i) => ({
-              id: `vec-${i}`,
-              score: 0.8 - (i * 0.01),
-              metadata: { text: `Similar to ${input.slice(0, 20)}...` }
-            }));
+            // Real vector store query against the persisted index
+            const topK = Math.max(1, parseInt(String(cfg.topK ?? 5), 10) || 5);
+            const qv = embedText(input);
+            const results = queryVectorDocs(input, topK).map(r => ({ id: r.id, score: cosineSimilarity(qv, r.vector), text: r.text, meta: r.meta }));
             setNodeOutputs(prev => ({
               ...prev,
               [nodeId]: {
                 status: 'success',
-                output: JSON.stringify({ query: input, results: items, rowCount: rows }, null, 2),
+                output: JSON.stringify({ query: input, results, rowCount: results.length }, null, 2),
                 timestamp: Date.now(),
                 duration: Date.now() - nodeStart
               }
             }));
-            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🗃️ ${node.label} — queried ${rows} vectors (${Date.now() - nodeStart}ms)`]);
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🗃️ ${node.label} — ${results.length} vectors matched (${Date.now() - nodeStart}ms)`]);
           } else if (node.category === 'core' && node.type === 'workflow_tools') {
-            // Workflow tool execution - direct manipulation
+            // Workflow tool — real HTTP POST if configured, else honest error
+            const output = await callWebhookIntegration(node.type, cfg, input);
             setNodeOutputs(prev => ({
               ...prev,
-              [nodeId]: { status: 'success', output: `Executed ${node.label} with input ${input.slice(0, Math.min(50, input.length))}`, timestamp: Date.now(), duration: Date.now() - nodeStart }
+              [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔧 ${node.label} — completed (${Date.now() - nodeStart}ms)`]);
           } else if (node.category === 'core' && node.type === 'custom_tool') {
-            // Custom tool execution
+            // Custom tool — real HTTP POST if configured, else honest error
+            const output = await callWebhookIntegration(node.type, cfg, input);
             setNodeOutputs(prev => ({
               ...prev,
-              [nodeId]: { status: 'success', output: `Custom tool executed with parameters: query="${input.slice(0, 30)}"`, timestamp: Date.now(), duration: Date.now() - nodeStart }
+              [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✏️ ${node.label} — completed (${Date.now() - nodeStart}ms)`]);
           } else if (node.category === 'ai' && node.type === 'core_brain') {
@@ -1798,17 +1828,20 @@ export function AIWonderCanvas({
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📜 ${node.label} — ${result.tokens ? result.tokens + ' tokens' : 'success'} (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'document') {
-            // Document Manager - read/write files
+            // Document Manager — real text processing (chunk / headings / stats)
+            const mode = cfg.documentMode || 'stats';
+            const output = processDocument(input, mode, cfg.chunkSize ? parseInt(cfg.chunkSize, 10) : undefined);
             setNodeOutputs(prev => ({
               ...prev,
-              [nodeId]: { status: 'success', output: `Document processed: ${input.slice(0, 50)}`, timestamp: Date.now(), duration: Date.now() - nodeStart }
+              [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📄 ${node.label} — processed (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'utilities') {
-            // Utility Toolbox - string, date and data manipulation
+            // Utility Toolbox — real string/date/data transforms
+            const output = applyUtility(input, cfg.utilityOp || 'uppercase', cfg.utilityArg);
             setNodeOutputs(prev => ({
               ...prev,
-              [nodeId]: { status: 'success', output: `Utility applied to: ${input.slice(0, 50)}`, timestamp: Date.now(), duration: Date.now() - nodeStart }
+              [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🛠️ ${node.label} — applied (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'confessionsAi') {
@@ -1922,18 +1955,25 @@ export function AIWonderCanvas({
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 💬 ${node.label} — mock posted to #alerts (${Date.now() - nodeStart}ms)`]);
             }
           } else if (node.type === 'gmail') {
-            // Gmail Dispatcher — sends email via Gmail API
-            const emailOutput = JSON.stringify({ sent: true, to: cfg.conditionRight || 'admin@wonderland.ai', subject: node.config.title || 'Workflow Alert', body: input.slice(0, 500), timestamp: new Date().toISOString() }, null, 2);
+            // Gmail Dispatcher — real API call via configured webhook/credentials
+            const emailOutput = await callWebhookIntegration(node.type, cfg, JSON.stringify({
+              to: cfg.conditionRight || '', subject: node.config.title || 'Workflow Alert', body: input.slice(0, 500),
+            }));
             setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: emailOutput, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📧 ${node.label} — email dispatched (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'github') {
-            // GitHub Sync — creates issue from payload
-            const issueOutput = JSON.stringify({ issueNumber: Math.floor(Math.random() * 9999) + 1, title: node.config.title || 'Auto-reported bug', body: input.slice(0, 500), repo: cfg.httpUrl || 'org/repo', state: 'open' }, null, 2);
+            // GitHub Sync — real issue creation via GitHub API
+            const issueOutput = await callGithubIssue(
+              cfg.repo || cfg.httpUrl || '',
+              node.config.title || 'Auto-reported issue',
+              input,
+              cfg.providerApiKey || cfg.apiKey || '',
+            );
             setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: issueOutput, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🐙 ${node.label} — issue created (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'chat_listener') {
             // Chat Event Listener — parses chat input and passes forward
-            const parsed = JSON.stringify({ event: 'chat_message', user: 'operator', message: input, parsed: true, timestamp: new Date().toISOString() }, null, 2);
+            const parsed = JSON.stringify({ event: 'chat_message', message: input, parsed: true, length: input.length, timestamp: new Date().toISOString() }, null, 2);
             setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: parsed, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 💬 ${node.label} — chat event captured (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'filter') {
@@ -1955,11 +1995,13 @@ export function AIWonderCanvas({
             setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: passes ? 'success' : 'warning', output: filterOutput, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔍 ${node.label} — ${passes ? 'passed' : 'filtered out'} (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'router') {
-            // Variable Router — routes based on input value
-            const routeKey = input.slice(0, 50).trim();
-            const routeOutput = JSON.stringify({ routed: true, route: routeKey, destination: `branch_${routeKey.toLowerCase().replace(/[^a-z0-9]/g, '_')}`, input: input.slice(0, 100) }, null, 2);
+            // Variable Router — routes based on configured routes or input
+            const routes = Array.isArray(cfg.routes) ? cfg.routes : [];
+            const matched = routes.find((r: any) => String(r.value) === input);
+            const route = matched ? String(matched.label || matched.value) : (routes.length > 0 ? 'default' : input.slice(0, 50));
+            const routeOutput = JSON.stringify({ routed: true, route, routes: routes.length, input: input.slice(0, 100) }, null, 2);
             setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: routeOutput, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
-            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔀 ${node.label} — routed to ${routeKey} (${Date.now() - nodeStart}ms)`]);
+            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔀 ${node.label} — routed to ${route} (${Date.now() - nodeStart}ms)`]);
            } else if (node.type === 'prompt') {
              // Prompt Template — resolves template expressions and injects context
              const template = cfg.promptTemplate || '{{ $input }}';
@@ -1967,81 +2009,92 @@ export function AIWonderCanvas({
              setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: resolved, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📝 ${node.label} — template resolved (${Date.now() - nodeStart}ms)`]);
            } else if (node.type === 'sentiment_analysis') {
-              const sentiment = ['Positive', 'Negative', 'Neutral'][Math.floor(Math.random() * 3)];
-              const score = Math.random().toFixed(2);
+              const result = await executeAINode({ ...node, config: cfg }, `Classify the sentiment of the following text as exactly one of Positive, Negative, or Neutral. Return only a JSON object with keys "sentiment" and "confidence" (a number between 0 and 1).\n\nText:\n${input}`);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: JSON.stringify({ sentiment, score, input: input.slice(0, 50) }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: result.output, timestamp: Date.now(), duration: Date.now() - nodeStart, tokens: result.tokens }
               }));
-              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🎭 ${node.label} — detected ${sentiment} (${Date.now() - nodeStart}ms)`]);
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🎭 ${node.label} — analyzed (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'summarization_chain') {
-              const summary = `Summary: ${input.slice(0, 50)}... [Condensed]`;
+              const result = await executeAINode({ ...node, config: cfg }, `Summarize the following text concisely while preserving key facts and figures:\n\n${input}`);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: summary, timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: result.output, timestamp: Date.now(), duration: Date.now() - nodeStart, tokens: result.tokens }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📝 ${node.label} — summarized (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'text_classifier') {
-              const category = ['Technical', 'Administrative', 'Urgent', 'General'][Math.floor(Math.random() * 4)];
+              const result = await executeAINode({ ...node, config: cfg }, `Classify the following text into exactly one category: Technical, Administrative, Urgent, or General. Return only a JSON object with keys "category" and "confidence" (0-1).\n\nText:\n${input}`);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: JSON.stringify({ category, confidence: (Math.random() * 0.2 + 0.8).toFixed(2) }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: result.output, timestamp: Date.now(), duration: Date.now() - nodeStart, tokens: result.tokens }
               }));
-              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🏷️ ${node.label} — classified as ${category} (${Date.now() - nodeStart}ms)`]);
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🏷️ ${node.label} — classified (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'ai_transform') {
-              const transformed = input.toUpperCase() + ' [AI-ENHANCED]';
+              const result = await executeAINode({ ...node, config: cfg }, `${cfg.transformInstruction || 'Transform the following data according to the best interpretation and return the result:'}\n\n${input}`);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: transformed, timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: result.output, timestamp: Date.now(), duration: Date.now() - nodeStart, tokens: result.tokens }
               }));
-              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✨ ${node.label} — transformed data (${Date.now() - nodeStart}ms)`]);
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✨ ${node.label} — transformed (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'chat_memory_manager') {
+              const memory = loadChatMemory();
+              const result = await executeAINode({ ...node, config: cfg }, `You are a conversation memory manager. Summarize the following recent conversation history into durable facts and key context.\n\nHistory:\n${JSON.stringify(memory.slice(-20))}\n\nNew input:\n${input}`);
+              appendChatMemory({ role: 'user', content: input });
+              appendChatMemory({ role: 'assistant', content: result.output });
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: 'Memory state updated: window_size=10', timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: result.output, timestamp: Date.now(), duration: Date.now() - nodeStart, tokens: result.tokens }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🧠 ${node.label} — memory synchronized (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'info_extractor') {
-              const extracted = { email: 'user@example.com', phone: '555-0199', id: 'ID-9928' };
+              const result = await executeAINode({ ...node, config: cfg }, `Extract from the following text every email address, phone number, URL, and ID, and any named entities. Return only a JSON object with keys "emails", "phones", "urls", "ids", "entities".\n\nText:\n${input}`);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: JSON.stringify(extracted, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: result.output, timestamp: Date.now(), duration: Date.now() - nodeStart, tokens: result.tokens }
               }));
-              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔍 ${node.label} — extracted entities (${Date.now() - nodeStart}ms)`]);
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔍 ${node.label} — entities extracted (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'openai_message_model') {
+              const result = await executeAINode({ ...node, config: cfg }, `Reformat the following content into a clean assistant message. Return only the content, no framing.\n\n${input}`);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: JSON.stringify({ role: 'assistant', content: 'Message formatted for OpenAI' }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: result.output, timestamp: Date.now(), duration: Date.now() - nodeStart, tokens: result.tokens }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🤖 ${node.label} — message mapped (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'qa_chain') {
+              const result = await executeAINode({ ...node, config: cfg }, `Answer the following question based only on the provided context. If the context does not contain the answer, say so.\n\nContext:\n${input}`);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: 'Answer: The system architecture uses a decoupled event-driven pattern.', timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: result.output, timestamp: Date.now(), duration: Date.now() - nodeStart, tokens: result.tokens }
               }));
-              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❓ ${node.label} — QA resolved (${Date.now() - nodeStart}ms)`]);
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❓ ${node.label} — QA answered (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'aggregate') {
+              const agg = aggregateItems(input);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: JSON.stringify({ count: 5, sum: 120, avg: 24 }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: agg, timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
-              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📊 ${node.label} — aggregated items (${Date.now() - nodeStart}ms)`]);
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📊 ${node.label} — aggregated (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'edit_fields') {
+              let fields: Record<string, any> = {};
+              try { fields = cfg.editFields ? JSON.parse(cfg.editFields) : {}; } catch { /* ignore malformed */ }
+              const output = editFields(input, fields);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: JSON.stringify({ ...JSON.parse(input || '{}'), edited: true, timestamp: Date.now() }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✏️ ${node.label} — fields updated (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'remove_duplicates') {
+              const output = removeDuplicates(input, cfg.dedupeKey);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: 'Duplicates removed. Items: 12 -> 8', timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🧹 ${node.label} — deduplicated (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'sort') {
+              const output = sortItems(input, cfg.sortKey, cfg.sortOrder || 'asc');
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: 'Items sorted by date DESC', timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ↕️ ${node.label} — sorted (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'wait') {
@@ -2053,57 +2106,86 @@ export function AIWonderCanvas({
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏳ ${node.label} — pause completed (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'execute_command') {
+              // Execute Command — treat the command as a JavaScript expression to evaluate against input
+              // (True shell execution requires a backend; in-browser we evaluate JS expressions safely)
+              let result: any;
+              try {
+                // Try to evaluate as JS expression: allow return statements, arrow functions, etc.
+                const fn = new Function('$input', `return (${cfg.command});`);
+                result = fn(input);
+              } catch (e: any) {
+                throw new Error(`execute_command: failed to evaluate as JavaScript expression: ${e.message}. ` +
+                  `Tip: use valid JS like \`return input.toUpperCase()\` or \`input.length\`. For shell commands, configure a backend endpoint.`);
+              }
+              const output = result === undefined ? '' : (typeof result === 'string' ? result : JSON.stringify(result));
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: 'Command executed: /usr/bin/whoami\nResult: operator_user', timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
-              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🖥️ ${node.label} — shell command ok (${Date.now() - nodeStart}ms)`]);
+              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🖥️ ${node.label} — executed (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'respond_webhook') {
+              // Respond Webhook — echo the input as the HTTP response body (real behavior)
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: 'HTTP 200 OK - Response sent to caller', timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: input, timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🌐 ${node.label} — webhook responded (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'calculator') {
+              // Calculator — evaluate a mathematical expression
+              const result = evalCalculator(input);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: 'Result: 42', timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: String(result), timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔢 ${node.label} — calculated (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'serpapi') {
+              // SerpAPI — real Google search via SerpAPI (requires API key)
+              const apiKey = cfg.providerApiKey || cfg.apiKey || '';
+              const output = await callSerpApi(input, apiKey);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: JSON.stringify({ results: [{ title: 'Top Result', link: 'https://example.com' }] }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔍 ${node.label} — search results fetched (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'wikipedia') {
+              // Wikipedia — real summary lookup via REST API
+              const output = await fetchWikipediaSummary(input);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: 'Wikipedia Summary: AI is the simulation of human intelligence...', timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📖 ${node.label} — lookup successful (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'wolfram_alpha') {
+              // Wolfram Alpha — real computation via API (requires App ID)
+              const appId = cfg.providerApiKey || cfg.apiKey || '';
+              const output = await callWolframAlpha(input, appId);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: 'Wolfram Result: 1 + 1 = 2', timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⚛️ ${node.label} — computation done (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'item_list_parser') {
+              // Item List Parser — parse input into a JSON array
+              const items = parseItems(input);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: JSON.stringify(['Item 1', 'Item 2', 'Item 3'], null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: JSON.stringify(items), timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📑 ${node.label} — parsed list (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'structured_parser') {
+              // Structured Parser — validate and parse JSON
+              const output = parseStructured(input);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: JSON.stringify({ valid: true, data: { name: 'Test' } }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🏗️ ${node.label} — structured JSON ok (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'autofix_parser') {
+              // AutoFix Parser — repair common JSON issues
+              const output = repairJson(input);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: 'Fixed malformed JSON: { "key": "value" }', timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🛠️ ${node.label} — fixed JSON syntax (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'openai_chat_model' || node.type === 'anthropic_chat_model' || node.type === 'gemini_chat_model') {
@@ -2114,27 +2196,56 @@ export function AIWonderCanvas({
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🤖 ${node.label} — response generated (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'embeddings_openai' || node.type === 'embeddings_gemini') {
+              // Embeddings — real local feature-hash embedding (deterministic, no API needed)
+              const vector = embedText(input, 256); // 256-dim vector
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: JSON.stringify({ vector: [0.12, -0.45, 0.88, '...'], dimensions: 1536 }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: JSON.stringify({ vector, dimensions: vector.length }), timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📐 ${node.label} — vector created (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'postgres_chat_memory' || node.type === 'redis_chat_memory') {
+              // Chat Memory — real persistent storage via localStorage
+              const key = cfg.memoryKey || 'default';
+              appendChatMemory({ role: 'user', content: input, timestamp: new Date().toISOString(), key });
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: 'Chat history persisted to remote store', timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: JSON.stringify({ stored: true, key, count: loadChatMemory().filter(m => m.key === key).length }), timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 💾 ${node.label} — state saved (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'in_memory_vector' || node.type === 'pinecone_vector' || node.type === 'pgvector_store') {
+              // Vector Store — real upsert into persisted index
+              const vector = embedText(input, 256);
+              const id = `vec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+              upsertVectorDoc({ id, text: input, vector, meta: { source: node.type, timestamp: Date.now() }, createdAt: Date.now() });
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: JSON.stringify({ operation: 'upsert', status: 'committed', index: 'main_cluster' }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: JSON.stringify({ operation: 'upsert', status: 'stored', id, vectorLength: vector.length }), timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🗄️ ${node.label} — vector index updated (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'data_loader') {
+              // Data Loader — real ingestion: fetch from URL or treat input as text, chunk, embed, and store
+              let text = input;
+              if (cfg.sourceType === 'url' && cfg.sourceUrl) {
+                try {
+                  const resp = await fetch(cfg.sourceUrl);
+                  if (!resp.ok) throw new Error(`Failed to fetch: ${resp.status}`);
+                  text = await resp.text();
+                } catch (e: any) {
+                  throw new Error(`Data loader fetch failed: ${e.message}`);
+                }
+              }
+              const chunkSize = parseInt(cfg.chunkSize ?? '500', 10) || 500;
+              const chunks: string[] = [];
+              for (let i = 0; i < text.length; i += chunkSize) chunks.push(text.slice(i, i + chunkSize));
+              for (const chunk of chunks) {
+                if (chunk.trim()) {
+                  const vec = embedText(chunk, 256);
+                  upsertVectorDoc({ id: `doc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, text: chunk, vector: vec, meta: { source: 'data_loader', chunkIndex: chunks.indexOf(chunk) }, createdAt: Date.now() });
+                }
+              }
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: 'Loaded 42 documents into vector store', timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output: JSON.stringify({ loadedChunks: chunks.length, totalCharacters: text.length, vectorStoreSize: loadVectorDocs().length }), timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📥 ${node.label} — documents ingested (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'vector_qa') {
@@ -2144,9 +2255,11 @@ export function AIWonderCanvas({
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔎 ${node.label} — vector QA answered (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'bitly' || node.type === 'bluesky' || node.type === 'dropbox' || node.type === 'elevenlabs' || node.type === 'gmail_app' || node.type === 'calendar_app' || node.type === 'docs_app' || node.type === 'sheets_app' || node.type === 'perplexity' || node.type === 'pushbullet' || node.type === 'reddit' || node.type === 'rss_read' || node.type === 'x_twitter' || node.type === 'youtube') {
+              // Integrated Apps — real HTTP call if webhook/API URL configured, otherwise honest error
+              const output = await callWebhookIntegration(node.type, cfg, input);
               setNodeOutputs(prev => ({
                 ...prev,
-                [nodeId]: { status: 'success', output: `API Call to ${node.type} successful. Payload processed.`, timestamp: Date.now(), duration: Date.now() - nodeStart }
+                [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔌 ${node.label} — integrated app response ok (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'n8n_tool') {
@@ -2177,11 +2290,30 @@ export function AIWonderCanvas({
                 }
               }
             } else if (node.type === 'calculator' || node.type === 'code_tool' || node.type === 'gmail_tool' || node.type === 'calendar_tool' || node.type === 'docs_tool' || node.type === 'sheets_tool' || node.type === 'http_tool' || node.type === 'mcp_client' || node.type === 'postgres_tool' || node.type === 'redis_tool' || node.type === 'send_email' || node.type === 'serpapi' || node.type === 'wikipedia' || node.type === 'wolfram_alpha') {
-              setNodeOutputs(prev => ({
-                ...prev,
-                [nodeId]: { status: 'success', output: `Tool ${node.label} executed with input: ${input.slice(0, 20)}...`, timestamp: Date.now(), duration: Date.now() - nodeStart }
-              }));
-              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔧 ${node.label} — tool output generated (${Date.now() - nodeStart}ms)`]);
+              // Generic Tool — real execution if configured
+              if (cfg.webhookUrl || cfg.httpUrl) {
+                const output = await callWebhookIntegration(node.type, cfg, input);
+                setNodeOutputs(prev => ({
+                  ...prev,
+                  [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
+                }));
+                setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔧 ${node.label} — tool executed via webhook (${Date.now() - nodeStart}ms)`]);
+              } else if (cfg.code) {
+                try {
+                  const fn = new Function('$input', `return (${cfg.code});`);
+                  const result = fn(input);
+                  const output = result === undefined ? '' : (typeof result === 'string' ? result : JSON.stringify(result));
+                  setNodeOutputs(prev => ({
+                    ...prev,
+                    [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
+                  }));
+                  setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔧 ${node.label} — tool executed via code (${Date.now() - nodeStart}ms)`]);
+                } catch (e: any) {
+                  throw new Error(`Tool code execution failed: ${e.message}`);
+                }
+              } else {
+                throw new Error(`Tool ${node.type} requires configuration: set webhookUrl/httpUrl for remote calls or code for local JavaScript execution.`);
+              }
             } else {
 
             // Non-AI/HTTP/code nodes: pass input through as output

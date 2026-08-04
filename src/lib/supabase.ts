@@ -9,8 +9,17 @@ function isHttpUrl(url: string): boolean {
   }
 }
 
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || (process.env.SUPABASE_URL as any) || (process.env.NEXT_PUBLIC_SUPABASE_URL as any) || '').trim();
-const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || (process.env.SUPABASE_ANON_KEY as any) || (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as any) || '').trim();
+const envVar = (name: string): string => {
+  const viteVal = import.meta.env?.[`VITE_${name}`];
+  if (viteVal) return String(viteVal);
+  if (typeof process !== 'undefined' && process.env) {
+    return String(process.env[name] || process.env[`NEXT_PUBLIC_${name}`] || '');
+  }
+  return '';
+};
+
+const supabaseUrl = envVar('SUPABASE_URL').trim();
+const supabaseAnonKey = envVar('SUPABASE_ANON_KEY').trim();
 
 export const supabase = (supabaseUrl && supabaseAnonKey && isHttpUrl(supabaseUrl))
   ? createClient(supabaseUrl, supabaseAnonKey)
