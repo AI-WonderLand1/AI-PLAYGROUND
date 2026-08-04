@@ -4467,6 +4467,8 @@ Respond ONLY in JSON matching this format:
                         ...selectedNode,
                         config: { ...selectedNode.config, ...patch }
                       })}
+                      nodeNames={nodes.map(n => n.label)}
+                      nodeOutputs={nodeOutputs}
                     />
                   </div>
                 )}

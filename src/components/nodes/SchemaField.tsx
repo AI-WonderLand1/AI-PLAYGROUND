@@ -1,7 +1,8 @@
 import React from 'react';
-import { Key, ExternalLink } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { NodeField, FieldOption, DEFAULT_BASE_URL } from '../../data/nodeSchemas';
 import { loadCustomProviders } from '../../lib/providers/registry';
+import { useExpressionAutocomplete, ExpressionDropdown, NodeOutputInfo } from './ExpressionAutocomplete';
 
 export type ConfigPatch = Record<string, any>;
 
@@ -9,6 +10,8 @@ interface SchemaFieldsProps {
   schema: { fields: NodeField[]; docsUrl?: string };
   config: Record<string, any>;
   onChange: (patch: ConfigPatch) => void;
+  nodeNames?: string[];
+  nodeOutputs?: Record<string, NodeOutputInfo>;
 }
 
 const inputCls =
@@ -99,9 +102,27 @@ function CredentialField({ config, onChange }: { config: Record<string, any>; on
   );
 }
 
-function FieldControl({ field, config, onChange }: { field: NodeField; config: Record<string, any>; onChange: (p: ConfigPatch) => void }) {
+function FieldControl({
+  field,
+  config,
+  onChange,
+  nodeNames,
+  nodeOutputs,
+}: {
+  field: NodeField;
+  config: Record<string, any>;
+  onChange: (p: ConfigPatch) => void;
+  nodeNames: string[];
+  nodeOutputs: Record<string, NodeOutputInfo>;
+}) {
   const value = config[field.key] ?? field.default;
   const set = (v: any) => onChange({ [field.key]: v });
+  const expr = useExpressionAutocomplete(
+    typeof value === 'string' ? value : '',
+    set,
+    nodeNames,
+    nodeOutputs,
+  );
 
   switch (field.type) {
     case 'credential':
@@ -109,24 +130,36 @@ function FieldControl({ field, config, onChange }: { field: NodeField; config: R
 
     case 'textarea':
       return (
-        <textarea
-          value={typeof value === 'string' ? value : ''}
-          onChange={(e) => set(e.target.value)}
-          rows={field.rows || 4}
-          placeholder={field.placeholder}
-          className={`w-full bg-[#141624] border border-[#1f2235] rounded p-3 text-xs text-white focus:outline-none focus:border-[#5b5eff] font-mono`}
-        />
+        <div className="relative">
+          <textarea
+            ref={expr.fieldRef}
+            value={typeof value === 'string' ? value : ''}
+            onChange={expr.handleChange}
+            onKeyDown={expr.handleKeyDown}
+            onBlur={expr.close}
+            rows={field.rows || 4}
+            placeholder={field.placeholder}
+            className={`w-full bg-[#141624] border border-[#1f2235] rounded p-3 text-xs text-white focus:outline-none focus:border-[#5b5eff] font-mono`}
+          />
+          <ExpressionDropdown state={expr.state} />
+        </div>
       );
 
     case 'code':
       return (
-        <textarea
-          value={typeof value === 'string' ? value : ''}
-          onChange={(e) => set(e.target.value)}
-          rows={field.rows || 8}
-          spellCheck={false}
-          className="w-full h-48 bg-[#0d0e1b] border border-[#1f2235] rounded p-3 text-xs text-[#00f5d4] focus:outline-none focus:border-[#b8ff57] font-mono"
-        />
+        <div className="relative">
+          <textarea
+            ref={expr.fieldRef}
+            value={typeof value === 'string' ? value : ''}
+            onChange={expr.handleChange}
+            onKeyDown={expr.handleKeyDown}
+            onBlur={expr.close}
+            rows={field.rows || 8}
+            spellCheck={false}
+            className="w-full h-48 bg-[#0d0e1b] border border-[#1f2235] rounded p-3 text-xs text-[#00f5d4] focus:outline-none focus:border-[#b8ff57] font-mono"
+          />
+          <ExpressionDropdown state={expr.state} />
+        </div>
       );
 
     case 'select':
@@ -199,18 +232,24 @@ function FieldControl({ field, config, onChange }: { field: NodeField; config: R
     case 'text':
     default:
       return (
-        <input
-          type="text"
-          value={typeof value === 'string' ? value : ''}
-          onChange={(e) => set(e.target.value)}
-          placeholder={field.placeholder}
-          className={inputCls}
-        />
+        <div className="relative">
+          <input
+            ref={expr.fieldRef}
+            type="text"
+            value={typeof value === 'string' ? value : ''}
+            onChange={expr.handleChange}
+            onKeyDown={expr.handleKeyDown}
+            onBlur={expr.close}
+            placeholder={field.placeholder}
+            className={inputCls}
+          />
+          <ExpressionDropdown state={expr.state} />
+        </div>
       );
   }
 }
 
-export function SchemaFields({ schema, config, onChange }: SchemaFieldsProps) {
+export function SchemaFields({ schema, config, onChange, nodeNames = [], nodeOutputs = {} }: SchemaFieldsProps) {
   const fields = schema.fields || [];
   let lastSection: string | null = null;
 
@@ -243,7 +282,13 @@ export function SchemaFields({ schema, config, onChange }: SchemaFieldsProps) {
               {field.type !== 'checkbox' && (
                 <label className={labelCls}>{field.label}</label>
               )}
-              <FieldControl field={field} config={config} onChange={onChange} />
+              <FieldControl
+                field={field}
+                config={config}
+                onChange={onChange}
+                nodeNames={nodeNames}
+                nodeOutputs={nodeOutputs}
+              />
               {field.help && <p className={helpCls}>{field.help}</p>}
             </div>
           </React.Fragment>
