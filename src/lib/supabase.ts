@@ -1,9 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || (process.env.SUPABASE_URL as any) || (process.env.NEXT_PUBLIC_SUPABASE_URL as any) || '');
-const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || (process.env.SUPABASE_ANON_KEY as any) || (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as any) || '');
+function isHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
-export const supabase = (supabaseUrl && supabaseAnonKey)
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || (process.env.SUPABASE_URL as any) || (process.env.NEXT_PUBLIC_SUPABASE_URL as any) || '').trim();
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || (process.env.SUPABASE_ANON_KEY as any) || (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as any) || '').trim();
+
+export const supabase = (supabaseUrl && supabaseAnonKey && isHttpUrl(supabaseUrl))
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
