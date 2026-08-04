@@ -1353,20 +1353,26 @@ export function AIWonderCanvas({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-save draft every 30 seconds — use a dirty flag to avoid recreating the timer on every keystroke
-  const autoSaveDirtyRef = useRef(false);
-  useEffect(() => { autoSaveDirtyRef.current = true; }, [nodes, connections, workflowTitle, workflowVersions]);
+  // Auto-save trigger: save shortly after any change to the workflow
+  // Debounced so rapid edits (drag, keystrokes) coalesce into a single save.
+  const lastSavedSnapshotRef = useRef<string | null>(null);
   useEffect(() => {
     if (!isActive) return;
-    const interval = setInterval(() => {
-      if (!autoSaveDirtyRef.current) return;
-      autoSaveDirtyRef.current = false;
+    const snapshot = JSON.stringify({ nodes, connections, workflowTitle });
+    if (lastSavedSnapshotRef.current === null) {
+      lastSavedSnapshotRef.current = snapshot;
+      return;
+    }
+    if (lastSavedSnapshotRef.current === snapshot) return;
+    const timer = setTimeout(() => {
+      lastSavedSnapshotRef.current = snapshot;
       const id = handleSaveVersion('auto-save');
       setLastAutoSave(Date.now());
       void id;
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [isActive]);
+    }, 1200);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes, connections, workflowTitle, workflowVersions, isActive]);
 
   // Compute diff between current workflow and a selected version
   const computeVersionDiff = (versionId: string | null): { added: string[]; removed: string[]; changed: string[] } => {
