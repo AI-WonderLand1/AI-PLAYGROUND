@@ -1032,35 +1032,48 @@ config: {
     showNotification(`${label} added to grid`);
   };
 
-  // Import a template workflow
-  const handleImportTemplate = (template: WorkflowTemplate) => {
-    const offsetX = Math.round(100 - panX / scale);
-    const offsetY = Math.round(100 - panY / scale);
-    const newNodes = template.nodes.map(n => ({
-      id: `${n.id}-${Math.random().toString(36).substr(2, 6)}`,
-      type: n.type,
-      category: n.category as WorkflowNode['category'],
-      label: n.label,
-      x: n.x + offsetX,
-      y: n.y + offsetY,
-      config: {
-        title: n.label,
-        description: `Imported from template: ${template.name}`,
-        ...n.config
-      }
-    }));
-    const idMap = new Map(template.nodes.map((n, i) => [n.id, newNodes[i].id]));
-    const newConns = template.connections.map(c => ({
-      id: `conn-${Math.random().toString(36).substr(2, 9)}`,
-      fromId: idMap.get(c.fromId)!,
-      toId: idMap.get(c.toId)!,
-      fromPort: c.fromPort
-    }));
-    setNodes(prev => [...prev, ...newNodes]);
-    setConnections(prev => [...prev, ...newConns]);
-    setActiveSidebarTab('workflows');
-    showNotification(`Imported template: ${template.name}`);
-  };
+// Import a template workflow
+const handleImportTemplate = (template: WorkflowTemplate) => {
+  const wasEmpty = nodes.length === 0;
+  
+  pushHistory();
+  const offsetX = Math.round(100 - panX / scale);
+  const offsetY = Math.round(100 - panY / scale);
+  const newNodes = template.nodes.map(n => ({
+    id: `${n.id}-${Math.random().toString(36).substr(2, 6)}`,
+    type: n.type,
+    category: n.category as WorkflowNode['category'],
+    label: n.label,
+    x: n.x + offsetX,
+    y: n.y + offsetY,
+    config: {
+      title: n.label,
+      description: `Imported from template: ${template.name}`,
+      ...n.config
+    }
+  }));
+  const idMap = new Map(template.nodes.map((n, i) => [n.id, newNodes[i].id]));
+  const newConns = template.connections.map(c => ({
+    id: `conn-${Math.random().toString(36).substr(2, 9)}`,
+    fromId: idMap.get(c.fromId)!,
+    toId: idMap.get(c.toId)!,
+    fromPort: c.fromPort
+  }));
+  setNodes(prev => [...prev, ...newNodes]);
+  setConnections(prev => [...prev, ...newConns]);
+  
+  // If canvas was empty before import, auto-layout to show the template nicely
+  if (wasEmpty) {
+    handleAutoLayout();
+    setWorkflowTitle(template.name);
+    setExecutionLog([]); // Clear execution log for fresh start
+    setSelectedNode(null); // Clear selection
+    setSelectedNodeIds(new Set()); // Clear selected nodes
+  }
+  
+  setActiveSidebarTab('workflows');
+  showNotification(`Imported template: ${template.name}`);
+};
 
   // Auto-layout: organize nodes in a left-to-right layered flow based on connections.
   // Connected nodes stay connected — only positions change.
