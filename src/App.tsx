@@ -11,7 +11,9 @@ import { ProvidersView } from './components/ProvidersView';
 import { SettingsView } from './components/SettingsView';
 import { AnalyticsView } from './components/AnalyticsView';
 import { LibraryView } from './library/LibraryView';
+import { CanvasTemplatesView } from './components/CanvasTemplatesView';
 import { toCanvasTemplate, extractWebhookUrl } from './library/convertToCanvas';
+import { WORKFLOW_TEMPLATES } from './data/workflowTemplates';
 import type { WorkflowTemplate as CanvasWorkflowTemplate } from './data/workflowTemplates';
 import { PlaygroundConfig, AIModule, MemoryNode, NexusEvent, ModelName, Session } from './types';
 import { Terminal, Database, ShieldAlert, Search, Globe, Sparkles, MessageSquare, BookOpen, Layers, Settings, AppWindow, Cpu, BarChart3, Lock } from 'lucide-react';
@@ -77,7 +79,7 @@ const INITIAL_EVENTS: NexusEvent[] = [
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [currentTab, setCurrentTab] = useState<'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'training' | 'creation' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings' | 'templates'>('models');
+  const [currentTab, setCurrentTab] = useState<'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'training' | 'creation' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings' | 'templates' | 'workflows'>('models');
   const [modelsCatalogSubView, setModelsCatalogSubView] = useState<'directory' | 'infrastructure'>('directory');
   const [selectedCatalogModelId, setSelectedCatalogModelId] = useState<ModelName>('fugu-ultra');
   const [topSearch, setTopSearch] = useState('');
@@ -488,6 +490,7 @@ export default function App() {
             { id: 'apikeys', label: 'API Keys', activeOn: ['apikeys'] },
             { id: 'presets', label: 'Presets', activeOn: ['presets'] },
             { id: 'templates', label: 'Templates', activeOn: ['templates'] },
+            { id: 'workflows', label: 'Workflows', activeOn: ['workflows'] },
             { id: 'models', label: 'Providers', activeOn: [] as string[], subView: 'infrastructure' },
             { id: 'settings', label: 'Settings', activeOn: ['settings'] },
           ] as { id: string; label: string; activeOn: string[]; subView?: string; externalUrl?: string }[]).map((link, idx) => {
@@ -673,6 +676,19 @@ export default function App() {
                 webhookUrl: extractWebhookUrl(libTemplate.workflow),
                 template: canvasTemplate,
               });
+              setCurrentTab('aiwonder');
+              setTimeout(() => setPendingN8nImport(null), 500);
+            }}
+          />
+        )}
+
+        {/* Canvas Templates Page View */}
+        {currentTab === 'workflows' && (
+          <CanvasTemplatesView
+            onLoadToCanvas={(templateId) => {
+              const tpl = WORKFLOW_TEMPLATES.find(t => t.id === templateId);
+              if (!tpl) return;
+              setPendingN8nImport({ name: tpl.name, webhookUrl: '', template: tpl });
               setCurrentTab('aiwonder');
               setTimeout(() => setPendingN8nImport(null), 500);
             }}
