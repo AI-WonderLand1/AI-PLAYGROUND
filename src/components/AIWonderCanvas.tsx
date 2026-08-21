@@ -15,7 +15,6 @@ import { cn, getOpenRouterModel } from '../utils';
 import { CATALOG_MODELS } from './ModelsCatalog';
 import { TrainingSetCompiler } from './TrainingSetCompiler';
 import { AgentCompiler } from './AgentCompiler';
-import { GoogleGenAI } from '@google/genai';
 import { WORKFLOW_TEMPLATES, WorkflowTemplate } from '../data/workflowTemplates';
 import { resolveExpressions, resolveConfig, ExpressionContext } from '../utils/expressionParser';
 import { getNodeSchema, DEFAULT_BASE_URL } from '../data/nodeSchemas';
@@ -2480,10 +2479,29 @@ systemPrompt: creationSystemPrompt,
           return data.choices?.[0]?.message?.content || '';
         }
       }
-      // Fallback to Gemini
-      const ai = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY as any) });
-      const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
-      return response.text || '';
+      // Fallback: route through the server proxy (no client-side keys)
+      const wonderlandKey = localStorage.getItem('wonderland_master_key');
+      if (wonderlandKey) {
+        try {
+          const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: 'gemini-3-flash-preview',
+              messages: [{ role: 'user', content: prompt }],
+              config: { temperature: 0.3 },
+              wonderlandKey,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            return data.content || '';
+          }
+        } catch (err: any) {
+          console.warn('Proxy analysis call failed.', err);
+        }
+      }
+      return 'Unable to generate analysis (no API key configured).';
     };
 
     try {

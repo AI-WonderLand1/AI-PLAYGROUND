@@ -12,7 +12,6 @@ export default defineConfig(({mode}) => {
   return {
     plugins: [react(), tailwindcss(), cloudflare()],
     define: {
-      'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(supabaseUrl),
       'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(supabaseAnonKey),
     },

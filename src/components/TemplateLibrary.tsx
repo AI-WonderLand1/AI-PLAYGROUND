@@ -5,6 +5,11 @@ import { Globe, Lock, Plus, Trash2, CheckCircle, Circle, Download, Eye, ArrowRig
 
 const API = '/api/templates';
 
+const authHeaders = (): Record<string, string> => {
+  const key = localStorage.getItem('wonderland_master_key');
+  return key ? { 'x-wonderland-key': key } : {};
+};
+
 interface TemplateLibraryProps {
   onLoadToCanvas?: (data: { name: string; webhookUrl: string }) => void;
 }
@@ -35,7 +40,7 @@ export function TemplateLibrary({ onLoadToCanvas }: TemplateLibraryProps) {
     setTemplates(prev => prev.map(t => t.file === file ? { ...t, visibility: next as any } : t));
     await fetch(API + '/' + encodeURIComponent(file) + '/meta', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ visibility: next }),
     });
   };
@@ -44,7 +49,7 @@ export function TemplateLibrary({ onLoadToCanvas }: TemplateLibraryProps) {
     if (!newTodo.trim()) return;
     await fetch(API + '/' + encodeURIComponent(file) + '/todo', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ text: newTodo.trim() }),
     });
     setNewTodo('');
@@ -52,12 +57,12 @@ export function TemplateLibrary({ onLoadToCanvas }: TemplateLibraryProps) {
   };
 
   const toggleTodo = async (file: string, idx: number) => {
-    await fetch(API + '/' + encodeURIComponent(file) + '/todo/' + idx, { method: 'PATCH' });
+    await fetch(API + '/' + encodeURIComponent(file) + '/todo/' + idx, { method: 'PATCH', headers: authHeaders() });
     fetchTemplates();
   };
 
   const deleteTemplate = async (file: string) => {
-    await fetch(API + '/' + encodeURIComponent(file), { method: 'DELETE' });
+    await fetch(API + '/' + encodeURIComponent(file), { method: 'DELETE', headers: authHeaders() });
     fetchTemplates();
   };
 
