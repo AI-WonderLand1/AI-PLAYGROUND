@@ -79,7 +79,7 @@ interface AIWonderCanvasProps {
   onDismissEvent: (id: string) => void;
    currentTab?: 'aiwonder' | 'training' | 'creation';
   onTabChange?: (tab: 'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings') => void;
-  pendingN8nImport?: { name: string; webhookUrl: string } | null;
+  pendingN8nImport?: { name: string; webhookUrl?: string; template?: WorkflowTemplate } | null;
 }
 
 // Helper: convert schedule interval string to milliseconds
@@ -665,6 +665,12 @@ config: {
   // Import n8n template as a node on the canvas
   useEffect(() => {
     if (pendingN8nImport?.name) {
+      // Full workflow import: spawn all template nodes + connections on the grid
+      if (pendingN8nImport.template && pendingN8nImport.template.nodes.length > 0) {
+        handleImportTemplate(pendingN8nImport.template);
+        showNotification(`Loaded workflow: ${pendingN8nImport.name} (${pendingN8nImport.template.nodes.length} nodes)`);
+        return;
+      }
       pushHistory();
       const nodeId = `n8n_tool-${Math.random().toString(36).substr(2, 9)}`;
       const spawnX = Math.round(200 - panX / scale);

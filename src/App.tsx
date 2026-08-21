@@ -10,7 +10,9 @@ import { PresetsView } from './components/PresetsView';
 import { ProvidersView } from './components/ProvidersView';
 import { SettingsView } from './components/SettingsView';
 import { AnalyticsView } from './components/AnalyticsView';
-import { TemplateLibrary } from './components/TemplateLibrary';
+import { LibraryView } from './library/LibraryView';
+import { toCanvasTemplate, extractWebhookUrl } from './library/convertToCanvas';
+import type { WorkflowTemplate as CanvasWorkflowTemplate } from './data/workflowTemplates';
 import { PlaygroundConfig, AIModule, MemoryNode, NexusEvent, ModelName, Session } from './types';
 import { Terminal, Database, ShieldAlert, Search, Globe, Sparkles, MessageSquare, BookOpen, Layers, Settings, AppWindow, Cpu, BarChart3, Lock } from 'lucide-react';
 import { cn } from './utils';
@@ -82,7 +84,7 @@ export default function App() {
   const [isFocused, setIsFocused] = useState(false);
   const topSearchRef = useRef<HTMLInputElement>(null);
   const [masterKeyShort, setMasterKeyShort] = useState('');
-  const [pendingN8nImport, setPendingN8nImport] = useState<{ name: string; webhookUrl: string } | null>(null);
+  const [pendingN8nImport, setPendingN8nImport] = useState<{ name: string; webhookUrl: string; template?: CanvasWorkflowTemplate } | null>(null);
 
   useEffect(() => {
     async function initAuth() {
@@ -663,9 +665,14 @@ export default function App() {
 
         {/* Template Library Tab View */}
         {currentTab === 'templates' && (
-          <TemplateLibrary
-            onLoadToCanvas={(data) => {
-              setPendingN8nImport(data);
+          <LibraryView
+            onLoadToCanvas={(libTemplate) => {
+              const canvasTemplate = toCanvasTemplate(libTemplate);
+              setPendingN8nImport({
+                name: canvasTemplate.name,
+                webhookUrl: extractWebhookUrl(libTemplate.workflow),
+                template: canvasTemplate,
+              });
               setCurrentTab('aiwonder');
               setTimeout(() => setPendingN8nImport(null), 500);
             }}
