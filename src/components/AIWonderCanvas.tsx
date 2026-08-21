@@ -15,7 +15,7 @@ import { cn, getOpenRouterModel } from '../utils';
 import { CATALOG_MODELS } from './ModelsCatalog';
 import { TrainingSetCompiler } from './TrainingSetCompiler';
 import { AgentCompiler } from './AgentCompiler';
-import { WORKFLOW_TEMPLATES, WorkflowTemplate } from '../data/workflowTemplates';
+import { WorkflowTemplate } from '../data/workflowTemplates';
 import { resolveExpressions, resolveConfig, ExpressionContext } from '../utils/expressionParser';
 import { getNodeSchema, DEFAULT_BASE_URL } from '../data/nodeSchemas';
 import { SchemaFields } from './nodes/SchemaField';
@@ -164,7 +164,7 @@ export function AIWonderCanvas({
   pendingN8nImport
 }: AIWonderCanvasProps) {
   // Navigation sidebar state (dashboard level)
-  const [activeSidebarTab, setActiveSidebarTab] = useState<'workflows' | 'templates' | 'credentials' | 'executions' | 'variables' | 'insights' | 'memory' | 'versions'>('workflows');
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'workflows' | 'credentials' | 'executions' | 'variables' | 'insights' | 'memory' | 'versions'>('workflows');
   
   // Workflow core states
   const [nodes, setNodes] = useState<WorkflowNode[]>(INITIAL_NODES);
@@ -2582,7 +2582,6 @@ Respond ONLY in JSON matching this format:
         <nav className="flex-1 p-3 space-y-1">
           {[
             { id: 'workflows', label: 'Workflows', icon: Layers },
-            { id: 'templates', label: 'Templates', icon: Download },
             { id: 'memory', label: 'Memory Core', icon: Network },
             { id: 'credentials', label: 'Credentials', icon: Key },
             { id: 'executions', label: 'Executions', icon: Clock },
@@ -2648,30 +2647,9 @@ Respond ONLY in JSON matching this format:
         </div>
       </aside>
 
-      {/* SIDEBAR PANEL (Templates, Credentials, etc.) */}
+      {/* SIDEBAR PANEL (Credentials, etc.) */}
       {activeSidebarTab !== 'workflows' && (
         <div className="w-72 border-r border-[#1f2235]/40 bg-[#0c0e17] flex flex-col overflow-hidden shrink-0">
-          {/* Templates panel */}
-          {activeSidebarTab === 'templates' && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              <h3 className="text-[10px] text-[#b8ff57] uppercase tracking-widest font-bold">Workflow Templates</h3>
-              <p className="text-[8px] text-[#4a5068]">Import a pre-built workflow to get started quickly.</p>
-              {WORKFLOW_TEMPLATES.map(tpl => (
-                <div
-                  key={tpl.id}
-                  className="bg-[#141624]/60 border border-[#1f2235]/40 rounded p-3 space-y-2 hover:border-[#b8ff57]/30 transition-all cursor-pointer group"
-                  onClick={() => handleImportTemplate(tpl)}
-                >
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-[11px] font-bold text-[#e8eaf6] group-hover:text-[#b8ff57]">{tpl.name}</h4>
-                    <Download className="w-3 h-3 text-[#4a5068] group-hover:text-[#b8ff57]" />
-                  </div>
-                  <p className="text-[8px] text-[#4a5068]">{tpl.description}</p>
-                  <div className="text-[7px] text-[#5e6686]">{tpl.nodeCount} nodes</div>
-                </div>
-              ))}
-            </div>
-          )}
           {/* Memory Core panel */}
           {activeSidebarTab === 'memory' && (
             <div className="flex-1 flex flex-col overflow-hidden">
