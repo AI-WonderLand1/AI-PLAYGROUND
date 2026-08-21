@@ -27,7 +27,7 @@ export function TemplateLibrary({ onLoadToCanvas }: TemplateLibraryProps) {
 
   const fetchTemplates = useCallback(async () => {
     try {
-      const res = await fetch(API);
+      const res = await fetch(API, { headers: authHeaders() });
       if (res.ok) setTemplates(await res.json());
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -67,13 +67,13 @@ export function TemplateLibrary({ onLoadToCanvas }: TemplateLibraryProps) {
   };
 
   const previewTemplate = async (file: string) => {
-    const res = await fetch(API + '/' + encodeURIComponent(file));
+    const res = await fetch(API + '/' + encodeURIComponent(file), { headers: authHeaders() });
     if (res.ok) setPreview({ file, content: await res.json() });
   };
 
   const loadToCanvas = async (file: string, name: string) => {
     try {
-      const res = await fetch(API + '/' + encodeURIComponent(file));
+      const res = await fetch(API + '/' + encodeURIComponent(file), { headers: authHeaders() });
       if (!res.ok) return;
       const data = await res.json();
       let webhookUrl = '';
@@ -95,7 +95,7 @@ export function TemplateLibrary({ onLoadToCanvas }: TemplateLibraryProps) {
   };
 
   const downloadTemplate = (file: string) => {
-    fetch(API + '/' + encodeURIComponent(file))
+    fetch(API + '/' + encodeURIComponent(file), { headers: authHeaders() })
       .then(r => r.json())
       .then(data => {
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });

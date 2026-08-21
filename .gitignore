@@ -11,3 +11,6 @@ coverage/
 .wrangler
 .dev.vars*
 !.dev.vars.example
+
+# runtime state written by server/template-library.ts
+src/data/n8n-templates/.metadata.json

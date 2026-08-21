@@ -1,24 +1,22 @@
 {
-  "name": "react-example",
+  "name": "ai-wonderland",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "server": "tsx server/index.ts",
     "build": "vite build",
-    "preview": "npm run build && wrangler dev",
+    "preview": "npm run build && vite preview",
     "clean": "rm -rf dist",
     "start": "NODE_ENV=production node --import tsx/esm server/index.ts",
-    "lint": "tsc --noEmit",
-    "deploy": "npm run build && wrangler deploy"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@supabase/supabase-js": "^2.108.2",
     "@tailwindcss/vite": "^4.3.2",
-    "@types/three": "^0.183.1",
     "@vitejs/plugin-react": "^6.0.4",
     "clsx": "^2.1.1",
     "cors": "^2.8.6",
@@ -27,9 +25,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.6.2",
     "lucide-react": "^1.25.0",
-    "mongodb": "^7.3.0",
     "motion": "^12.42.2",
-    "openai": "^6.47.0",
     "react": "^19.0.0",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
@@ -43,15 +39,14 @@
     "protobufjs": "7.6.5"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.47.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.1.0",
     "@types/react-dom": "^19.2.4",
+    "@types/three": "^0.183.1",
     "autoprefixer": "^10.5.4",
     "tailwindcss": "^4.3.3",
     "typescript": "~7.0.2",
-    "vite": "^8.1.5",
-    "wrangler": "^4.114.0"
+    "vite": "^8.1.5"
   }
 }

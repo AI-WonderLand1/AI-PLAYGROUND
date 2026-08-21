@@ -15,7 +15,3 @@ if (validKeys.size === 0) {
 export function validateWonderlandKey(key: string): boolean {
   return validKeys.has(key);
 }
-
-export function addWonderlandKey(key: string): void {
-  validKeys.add(key);
-}

@@ -39,7 +39,6 @@ if (process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY) {
 }
 
 app.use(express.json());
-app.use('/api/templates', templateRouter);
 
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -48,6 +47,10 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many requests. Please slow down.' },
 });
+
+// Register the limiter BEFORE the router so it actually runs for matched routes.
+app.use('/api/templates', apiLimiter);
+app.use('/api/templates', templateRouter);
 
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -64,8 +67,6 @@ const streamLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many requests. Please slow down.' },
 });
-
-app.use('/api/templates', apiLimiter);
 
 function validateChatBody(body: any): { ok: boolean; error?: string } {
   const { model, messages } = body || {};
@@ -165,12 +166,19 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
+// Unknown API paths get a JSON 404 (the SPA fallback below is for client routes only).
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
 app.get('/*splat', (_req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled rejection:', err);
+  // An unhandled rejection leaves the process in an unknown state — fail fast in production.
+  if (process.env.NODE_ENV === 'production') process.exit(1);
 });
 
 app.listen(PORT, () => {

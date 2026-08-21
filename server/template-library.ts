@@ -44,21 +44,25 @@ router.use('/:file', (req, res, next) => {
 });
 
 function fileParam(req: Request): string {
-  const v = fileParam(req);
+  const v = req.params.file;
   return typeof v === 'string' ? v : '';
 }
 
-router.get('/', (_, res) => {
+router.get('/', (req, res) => {
   try {
     ensure();
     const meta = loadM();
+    const authed = isAuthorized(req);
     const files = fs.readdirSync(DIR).filter(f => f.endsWith('.json') && f !== '.metadata.json').sort();
-    const result = files.map(f => {
-      const data = JSON.parse(fs.readFileSync(path.join(DIR, f), 'utf-8'));
+    const result: any[] = [];
+    for (const f of files) {
       const info = meta[f] || {};
+      // Unauthenticated callers may only see templates explicitly marked public.
+      if (!authed && info.visibility !== 'public') continue;
+      const data = JSON.parse(fs.readFileSync(path.join(DIR, f), 'utf-8'));
       const stat = fs.statSync(path.join(DIR, f));
-      return { file: f, name: data.name || f, slug: f.replace('.json', ''), visibility: info.visibility || 'private', description: info.description || '', tags: info.tags || [], todo: info.todo || [], size: stat.size, modified: stat.mtimeMs };
-    });
+      result.push({ file: f, name: data.name || f, slug: f.replace('.json', ''), visibility: info.visibility || 'private', description: info.description || '', tags: info.tags || [], todo: info.todo || [], size: stat.size, modified: stat.mtimeMs });
+    }
     res.json(result);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
@@ -67,6 +71,9 @@ router.get('/:file', (req, res) => {
   try {
     const fp = path.join(DIR, fileParam(req));
     if (!fs.existsSync(fp)) { res.status(404).json({ error: 'not found' }); return; }
+    // Hide private templates from unauthenticated callers (404 to avoid leaking existence).
+    const info = loadM()[fileParam(req)] || {};
+    if (!isAuthorized(req) && info.visibility !== 'public') { res.status(404).json({ error: 'not found' }); return; }
     res.json(JSON.parse(fs.readFileSync(fp, 'utf-8')));
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });

@@ -14,7 +14,8 @@ const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
 
 const router = Router();
 
-router.post('/stripe/webhook', async (req, res) => {
+// Mounted at /api/stripe/webhook (see server/index.ts) — handle the stripped root path.
+router.post('/', async (req, res) => {
   const sig = req.headers['stripe-signature'] as string;
 
   let event: Stripe.Event;
