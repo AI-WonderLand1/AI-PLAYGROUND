@@ -149,6 +149,59 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       { id: 'tpl_conn_2', fromId: 'tpl_code_gen', toId: 'tpl_if' },
       { id: 'tpl_conn_3', fromId: 'tpl_if', toId: 'tpl_code_high', fromPort: 'true' },
       { id: 'tpl_conn_4', fromId: 'tpl_if', toId: 'tpl_code_low', fromPort: 'false' }
-    ]
-  }
-];
+     ]
+   },
+   {
+     id: 'memory-agent-chain',
+     name: 'Memory → Agent Processing',
+     description: 'Retrieve memory nodes → Process with AI agent → Store results',
+     nodeCount: 4,
+     nodes: [
+       { id: 'tpl_memory_1', type: 'decision', label: 'Important Decision', category: 'dream_maker', x: 100, y: 150 },
+       { id: 'tpl_memory_2', type: 'bug', label: 'Critical Bug Report', category: 'dream_maker', x: 100, y: 300 },
+       { id: 'tpl_ai', type: 'agent', label: 'Analyze & Summarize', category: 'ai', x: 350, y: 225, config: { model: 'gemini-3-flash-preview', systemPrompt: 'Analyze the provided memory nodes and create a concise summary highlighting key action items and patterns.', temperature: 0.5 } },
+       { id: 'tpl_memory_3', type: 'pattern', label: 'Action Plan', category: 'dream_maker', x: 600, y: 225 }
+     ],
+     connections: [
+       { id: 'tpl_conn_1', fromId: 'tpl_memory_1', toId: 'tpl_ai' },
+       { id: 'tpl_conn_2', fromId: 'tpl_memory_2', toId: 'tpl_ai' },
+       { id: 'tpl_conn_3', fromId: 'tpl_ai', toId: 'tpl_memory_3' }
+     ]
+   },
+   {
+     id: 'web-scraper-pipeline',
+     name: 'Web Scraper & Analyzer',
+     description: 'Fetch web content → Extract key information → AI analysis → Store insights',
+     nodeCount: 5,
+     nodes: [
+       { id: 'tpl_trigger', type: 'manual', label: 'Start Scraping', category: 'trigger', x: 100, y: 150 },
+       { id: 'tpl_http', type: 'http', label: 'Fetch Webpage', category: 'app', x: 300, y: 150, config: { httpUrl: 'https://example.com/article', httpMethod: 'GET' } },
+       { id: 'tpl_code_extract', type: 'code', label: 'Extract Content', category: 'core', x: 500, y: 100, config: { code: '// Extract main content from HTML\nconst html = $input;\nconst text = html.replace(/<[^>]*>/g, \' \').replace(/\\s+/g, \' \').trim();\nreturn text.substring(0, 2000); // Limit length' } },
+       { id: 'tpl_ai', type: 'agent', label: 'AI Analyzer', category: 'ai', x: 700, y: 100, config: { model: 'gemini-3-flash-preview', systemPrompt: 'Analyze the extracted web content and provide: 1) Main topic, 2) Key points (3-5), 3) Target audience, 4) Content quality score (1-10). Respond in JSON format.', temperature: 0.3 } },
+       { id: 'tpl_memory', type: 'note', label: 'Insights Summary', category: 'dream_maker', x: 900, y: 100 }
+     ],
+     connections: [
+       { id: 'tpl_conn_1', fromId: 'tpl_trigger', toId: 'tpl_http' },
+       { id: 'tpl_conn_2', fromId: 'tpl_http', toId: 'tpl_code_extract' },
+       { id: 'tpl_conn_3', fromId: 'tpl_code_extract', toId: 'tpl_ai' },
+       { id: 'tpl_conn_4', fromId: 'tpl_ai', toId: 'tpl_memory' }
+     ]
+   },
+   {
+     id: 'database-query-tool',
+     name: 'Database Query Dashboard',
+     description: 'Schedule → Query database → Format results → Notify team',
+     nodeCount: 4,
+     nodes: [
+       { id: 'tpl_schedule', type: 'schedule', label: 'Daily Report', category: 'trigger', x: 100, y: 150, config: { scheduleInterval: 'every_day' } },
+       { id: 'tpl_code_query', type: 'code', label: 'Prepare Query', category: 'core', x: 300, y: 150, config: { code: 'return JSON.stringify({ query: \"SELECT * FROM daily_metrics WHERE date = CURDATE()\", limit: 100 });' } },
+       { id: 'tpl_http_db', type: 'http', label: 'Execute Query', category: 'app', x: 500, y: 150, config: { httpUrl: 'https://api.example.com/db/query', httpMethod: 'POST', httpHeaders: '{\"Content-Type\": \"application/json\"}', httpBody: '{{ $input }}' } },
+       { id: 'tpl_slack', type: 'slack', label: 'Post to Slack', category: 'output_parsers', x: 700, y: 150, config: { httpUrl: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK' } }
+     ],
+     connections: [
+       { id: 'tpl_conn_1', fromId: 'tpl_schedule', toId: 'tpl_code_query' },
+       { id: 'tpl_conn_2', fromId: 'tpl_code_query', toId: 'tpl_http_db' },
+       { id: 'tpl_conn_3', fromId: 'tpl_http_db', toId: 'tpl_slack' }
+     ]
+   }
+ ];

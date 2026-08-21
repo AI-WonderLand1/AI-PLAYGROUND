@@ -15,7 +15,6 @@ import { cn, getOpenRouterModel } from '../utils';
 import { CATALOG_MODELS } from './ModelsCatalog';
 import { TrainingSetCompiler } from './TrainingSetCompiler';
 import { AgentCompiler } from './AgentCompiler';
-import { GoogleGenAI } from '@google/genai';
 import { WORKFLOW_TEMPLATES, WorkflowTemplate } from '../data/workflowTemplates';
 import { resolveExpressions, resolveConfig, ExpressionContext } from '../utils/expressionParser';
 import { getNodeSchema, DEFAULT_BASE_URL } from '../data/nodeSchemas';
@@ -80,7 +79,7 @@ interface AIWonderCanvasProps {
   onDismissEvent: (id: string) => void;
    currentTab?: 'aiwonder' | 'training' | 'creation';
   onTabChange?: (tab: 'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings') => void;
-  pendingN8nImport?: { name: string; webhookUrl: string } | null;
+  pendingN8nImport?: { name: string; webhookUrl?: string; template?: WorkflowTemplate } | null;
 }
 
 // Helper: convert schedule interval string to milliseconds
@@ -666,6 +665,12 @@ config: {
   // Import n8n template as a node on the canvas
   useEffect(() => {
     if (pendingN8nImport?.name) {
+      // Full workflow import: spawn all template nodes + connections on the grid
+      if (pendingN8nImport.template && pendingN8nImport.template.nodes.length > 0) {
+        handleImportTemplate(pendingN8nImport.template);
+        showNotification(`Loaded workflow: ${pendingN8nImport.name} (${pendingN8nImport.template.nodes.length} nodes)`);
+        return;
+      }
       pushHistory();
       const nodeId = `n8n_tool-${Math.random().toString(36).substr(2, 9)}`;
       const spawnX = Math.round(200 - panX / scale);
@@ -1032,35 +1037,48 @@ config: {
     showNotification(`${label} added to grid`);
   };
 
-  // Import a template workflow
-  const handleImportTemplate = (template: WorkflowTemplate) => {
-    const offsetX = Math.round(100 - panX / scale);
-    const offsetY = Math.round(100 - panY / scale);
-    const newNodes = template.nodes.map(n => ({
-      id: `${n.id}-${Math.random().toString(36).substr(2, 6)}`,
-      type: n.type,
-      category: n.category as WorkflowNode['category'],
-      label: n.label,
-      x: n.x + offsetX,
-      y: n.y + offsetY,
-      config: {
-        title: n.label,
-        description: `Imported from template: ${template.name}`,
-        ...n.config
-      }
-    }));
-    const idMap = new Map(template.nodes.map((n, i) => [n.id, newNodes[i].id]));
-    const newConns = template.connections.map(c => ({
-      id: `conn-${Math.random().toString(36).substr(2, 9)}`,
-      fromId: idMap.get(c.fromId)!,
-      toId: idMap.get(c.toId)!,
-      fromPort: c.fromPort
-    }));
-    setNodes(prev => [...prev, ...newNodes]);
-    setConnections(prev => [...prev, ...newConns]);
-    setActiveSidebarTab('workflows');
-    showNotification(`Imported template: ${template.name}`);
-  };
+// Import a template workflow
+const handleImportTemplate = (template: WorkflowTemplate) => {
+  const wasEmpty = nodes.length === 0;
+  
+  pushHistory();
+  const offsetX = Math.round(100 - panX / scale);
+  const offsetY = Math.round(100 - panY / scale);
+  const newNodes = template.nodes.map(n => ({
+    id: `${n.id}-${Math.random().toString(36).substr(2, 6)}`,
+    type: n.type,
+    category: n.category as WorkflowNode['category'],
+    label: n.label,
+    x: n.x + offsetX,
+    y: n.y + offsetY,
+    config: {
+      title: n.label,
+      description: `Imported from template: ${template.name}`,
+      ...n.config
+    }
+  }));
+  const idMap = new Map(template.nodes.map((n, i) => [n.id, newNodes[i].id]));
+  const newConns = template.connections.map(c => ({
+    id: `conn-${Math.random().toString(36).substr(2, 9)}`,
+    fromId: idMap.get(c.fromId)!,
+    toId: idMap.get(c.toId)!,
+    fromPort: c.fromPort
+  }));
+  setNodes(prev => [...prev, ...newNodes]);
+  setConnections(prev => [...prev, ...newConns]);
+  
+  // If canvas was empty before import, auto-layout to show the template nicely
+  if (wasEmpty) {
+    handleAutoLayout();
+    setWorkflowTitle(template.name);
+    setExecutionLog([]); // Clear execution log for fresh start
+    setSelectedNode(null); // Clear selection
+    setSelectedNodeIds(new Set()); // Clear selected nodes
+  }
+  
+  setActiveSidebarTab('workflows');
+  showNotification(`Imported template: ${template.name}`);
+};
 
   // Auto-layout: organize nodes in a left-to-right layered flow based on connections.
   // Connected nodes stay connected — only positions change.
@@ -2467,10 +2485,29 @@ systemPrompt: creationSystemPrompt,
           return data.choices?.[0]?.message?.content || '';
         }
       }
-      // Fallback to Gemini
-      const ai = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY as any) });
-      const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
-      return response.text || '';
+      // Fallback: route through the server proxy (no client-side keys)
+      const wonderlandKey = localStorage.getItem('wonderland_master_key');
+      if (wonderlandKey) {
+        try {
+          const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: 'gemini-3-flash-preview',
+              messages: [{ role: 'user', content: prompt }],
+              config: { temperature: 0.3 },
+              wonderlandKey,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            return data.content || '';
+          }
+        } catch (err: any) {
+          console.warn('Proxy analysis call failed.', err);
+        }
+      }
+      return 'Unable to generate analysis (no API key configured).';
     };
 
     try {

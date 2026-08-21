@@ -5,6 +5,11 @@ import { Globe, Lock, Plus, Trash2, CheckCircle, Circle, Download, Eye, ArrowRig
 
 const API = '/api/templates';
 
+const authHeaders = (): Record<string, string> => {
+  const key = localStorage.getItem('wonderland_master_key');
+  return key ? { 'x-wonderland-key': key } : {};
+};
+
 interface TemplateLibraryProps {
   onLoadToCanvas?: (data: { name: string; webhookUrl: string }) => void;
 }
@@ -22,7 +27,7 @@ export function TemplateLibrary({ onLoadToCanvas }: TemplateLibraryProps) {
 
   const fetchTemplates = useCallback(async () => {
     try {
-      const res = await fetch(API);
+      const res = await fetch(API, { headers: authHeaders() });
       if (res.ok) setTemplates(await res.json());
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -35,7 +40,7 @@ export function TemplateLibrary({ onLoadToCanvas }: TemplateLibraryProps) {
     setTemplates(prev => prev.map(t => t.file === file ? { ...t, visibility: next as any } : t));
     await fetch(API + '/' + encodeURIComponent(file) + '/meta', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ visibility: next }),
     });
   };
@@ -44,7 +49,7 @@ export function TemplateLibrary({ onLoadToCanvas }: TemplateLibraryProps) {
     if (!newTodo.trim()) return;
     await fetch(API + '/' + encodeURIComponent(file) + '/todo', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ text: newTodo.trim() }),
     });
     setNewTodo('');
@@ -52,23 +57,23 @@ export function TemplateLibrary({ onLoadToCanvas }: TemplateLibraryProps) {
   };
 
   const toggleTodo = async (file: string, idx: number) => {
-    await fetch(API + '/' + encodeURIComponent(file) + '/todo/' + idx, { method: 'PATCH' });
+    await fetch(API + '/' + encodeURIComponent(file) + '/todo/' + idx, { method: 'PATCH', headers: authHeaders() });
     fetchTemplates();
   };
 
   const deleteTemplate = async (file: string) => {
-    await fetch(API + '/' + encodeURIComponent(file), { method: 'DELETE' });
+    await fetch(API + '/' + encodeURIComponent(file), { method: 'DELETE', headers: authHeaders() });
     fetchTemplates();
   };
 
   const previewTemplate = async (file: string) => {
-    const res = await fetch(API + '/' + encodeURIComponent(file));
+    const res = await fetch(API + '/' + encodeURIComponent(file), { headers: authHeaders() });
     if (res.ok) setPreview({ file, content: await res.json() });
   };
 
   const loadToCanvas = async (file: string, name: string) => {
     try {
-      const res = await fetch(API + '/' + encodeURIComponent(file));
+      const res = await fetch(API + '/' + encodeURIComponent(file), { headers: authHeaders() });
       if (!res.ok) return;
       const data = await res.json();
       let webhookUrl = '';
@@ -90,7 +95,7 @@ export function TemplateLibrary({ onLoadToCanvas }: TemplateLibraryProps) {
   };
 
   const downloadTemplate = (file: string) => {
-    fetch(API + '/' + encodeURIComponent(file))
+    fetch(API + '/' + encodeURIComponent(file), { headers: authHeaders() })
       .then(r => r.json())
       .then(data => {
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });

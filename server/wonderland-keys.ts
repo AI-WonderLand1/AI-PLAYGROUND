@@ -5,13 +5,13 @@ const validKeys: Set<string> = new Set(
     .filter(Boolean)
 );
 
-export function validateWonderlandKey(key: string): boolean {
-  if (validKeys.size === 0) {
-    return true;
-  }
-  return validKeys.has(key);
+if (validKeys.size === 0) {
+  console.warn(
+    '[wonderland-keys] WONDERLAND_KEYS is not set. The proxy will REJECT all /api/chat requests. ' +
+    'Set WONDERLAND_KEYS to a comma-separated list of valid keys before deploying.'
+  );
 }
 
-export function addWonderlandKey(key: string): void {
-  validKeys.add(key);
+export function validateWonderlandKey(key: string): boolean {
+  return validKeys.has(key);
 }

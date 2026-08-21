@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import rateLimit from 'express-rate-limit';
 import { validateWonderlandKey } from './wonderland-keys';
 import { callModel, callModelStreaming } from './providers/registry';
 import templateRouter from './template-library';
@@ -12,7 +13,21 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
 
-app.use(cors());
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin(origin, cb) {
+    const isSameOrigin = !origin;
+    const isAllowed = allowedOrigins.length === 0
+      ? isSameOrigin
+      : isSameOrigin || allowedOrigins.includes(origin);
+    cb(null, isAllowed);
+  },
+  allowedHeaders: ['Content-Type', 'x-wonderland-key'],
+}));
 
 const distPath = path.resolve(__dirname, '..', 'dist');
 app.use(express.static(distPath));
@@ -24,13 +39,61 @@ if (process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY) {
 }
 
 app.use(express.json());
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
+
+// Register the limiter BEFORE the router so it actually runs for matched routes.
+app.use('/api/templates', apiLimiter);
 app.use('/api/templates', templateRouter);
 
-app.post('/api/chat', async (req, res) => {
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
+
+const streamLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
+
+function validateChatBody(body: any): { ok: boolean; error?: string } {
+  const { model, messages } = body || {};
+  if (typeof model !== 'string' || !model.trim()) {
+    return { ok: false, error: 'Missing required field: model' };
+  }
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { ok: false, error: 'Missing required field: messages (non-empty array)' };
+  }
+  for (const msg of messages) {
+    if (
+      !msg || typeof msg !== 'object' ||
+      typeof msg.content !== 'string' ||
+      (msg.role !== 'user' && msg.role !== 'assistant' && msg.role !== 'system')
+    ) {
+      return { ok: false, error: 'Each message must be { role: "user"|"assistant"|"system", content: string }' };
+    }
+  }
+  return { ok: true };
+}
+
+app.post('/api/chat', chatLimiter, async (req, res) => {
   const { model, messages, config, wonderlandKey } = req.body;
 
-  if (!model || !messages) {
-    res.status(400).json({ error: 'Missing required fields: model, messages' });
+  const validation = validateChatBody(req.body);
+  if (!validation.ok) {
+    res.status(400).json({ error: validation.error });
     return;
   }
 
@@ -53,11 +116,12 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-app.post('/api/chat/stream', async (req, res) => {
+app.post('/api/chat/stream', streamLimiter, async (req, res) => {
   const { model, messages, config, wonderlandKey } = req.body;
 
-  if (!model || !messages) {
-    res.status(400).json({ error: 'Missing required fields: model, messages' });
+  const validation = validateChatBody(req.body);
+  if (!validation.ok) {
+    res.status(400).json({ error: validation.error });
     return;
   }
 
@@ -102,12 +166,19 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
+// Unknown API paths get a JSON 404 (the SPA fallback below is for client routes only).
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
 app.get('/*splat', (_req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled rejection:', err);
+  // An unhandled rejection leaves the process in an unknown state — fail fast in production.
+  if (process.env.NODE_ENV === 'production') process.exit(1);
 });
 
 app.listen(PORT, () => {

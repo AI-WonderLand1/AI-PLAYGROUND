@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Square, Terminal, Copy, Check, Code, MessageSquare } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
 import { Message, AIModule } from '../types';
 import { ResponseView } from './ResponseView';
 import { RobotScene } from './RobotScene';
@@ -97,6 +96,7 @@ export function Playground({ module }: PlaygroundProps) {
       let streamMsgAdded = false;
 
       const customProvider = isCustomModel(config.model) ? getCustomProviderForModel(config.model) : undefined;
+      const wonderlandKey = localStorage.getItem('wonderland_master_key');
 
       if (customProvider) {
         try {
@@ -119,7 +119,6 @@ export function Playground({ module }: PlaygroundProps) {
           console.warn("Custom provider call failed.", err);
         }
       } else if (!isImgModel) {
-        const wonderlandKey = localStorage.getItem('wonderland_master_key');
         const openRouterKey = localStorage.getItem('openrouter_api_key');
         const orModel = getOpenRouterModel(config.model);
         let accumulated = '';
@@ -364,72 +363,58 @@ export function Playground({ module }: PlaygroundProps) {
         }
       }
 
-      // ── Image models (always Gemini SDK) ──
+// ── Image models (routed through the server proxy — no client-side keys) ──
       if (isImgModel) {
-        const ai = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY as any) });
-        const geminiModel = (config.model.startsWith('gemini-') && !config.model.includes('banana')) ? config.model : 'imagen-3.0-generate-002';
-        const response = await ai.models.generateContent({
-          model: geminiModel,
-          contents: { parts: [{ text: prompt }] },
-          config: {
-            imageConfig: { aspectRatio: "1:1" }
-          }
-        });
+        try {
+          const res = await fetchWithRetry('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: config.model,
+              messages: [
+                ...(config.systemInstruction ? [{ role: 'system', content: config.systemInstruction }] : []),
+                { role: 'user', content: prompt },
+              ],
+              config: {
+                temperature: config.temperature,
+                topP: config.topP,
+                maxTokens: config.maxOutputTokens,
+              },
+              wonderlandKey,
+            }),
+          });
 
-        let imageUrl = '';
-        for (const part of response.candidates?.[0]?.content?.parts ?? []) {
-          if (part.inlineData) {
-            imageUrl = `data:image/png;base64,${part.inlineData.data}`;
-            break;
+          if (res.ok) {
+            const data = await res.json();
+            finalModelResponse = data.content;
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            console.warn(`Image model proxy error (${res.status}): ${errData?.error || 'Unknown'}`);
           }
+        } catch (err: any) {
+          console.warn("Image model proxy call failed, falling back to message.", err);
         }
+      } else if (!finalModelResponse) {
+        // All server-side paths failed — surface an explicit error instead of a silent empty reply.
+        finalModelResponse = "Error: No provider returned a response. Check that the proxy server and provider API keys are configured.";
+      }
 
+      if (finalModelResponse && !streamMsgAdded) {
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: imageUrl ? `![Generated Image](${imageUrl})` : "Failed to generate image.",
+          content: finalModelResponse,
           timestamp: Date.now(),
         }]);
-      } else if (!finalModelResponse) {
-        // ── Gemini SDK fallback (if both OpenRouter and proxy failed) ──
-        const ai = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY as any) });
-        const response = await ai.models.generateContent({
-          model: config.model.startsWith('gemini-') ? config.model : 'gemini-3-flash-preview',
-          contents: prompt,
-          config: {
-            systemInstruction: config.systemInstruction,
-            temperature: config.temperature,
-            topP: config.topP,
-            topK: config.topK,
-          },
-        });
-
-        const resultText = response.text || "No response received.";
-
-setMessages(prev => [...prev, {
-  role: 'assistant',
-  content: resultText,
-  timestamp: Date.now(),
-}]);
-
-        setIsSpeaking(true);
-        safeTimeout(() => setIsSpeaking(false), 3000);
-      } else if (finalModelResponse && !streamMsgAdded) {
-setMessages(prev => [...prev, {
-  role: 'assistant',
-  content: finalModelResponse,
-  timestamp: Date.now(),
-}]);
-
-        setIsSpeaking(true);
-        safeTimeout(() => setIsSpeaking(false), 3000);
       }
+      setIsSpeaking(true);
+      safeTimeout(() => setIsSpeaking(false), 3000);
     } catch (error) {
       console.error("AI Error:", error);
-setMessages(prev => [...prev, {
-  role: 'assistant',
-  content: "Error: " + (error instanceof Error ? error.message : "Unknown error"),
-  timestamp: Date.now(),
-}]);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: "Error: " + (error instanceof Error ? error.message : "Unknown error"),
+        timestamp: Date.now(),
+      }]);
     } finally {
       setIsLoading(false);
     }

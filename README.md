@@ -85,10 +85,10 @@ The platform also includes:
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) >= 18
+- [Node.js](https://nodejs.org/) >= 20.19 (Vite 8 requirement)
 - A [Supabase](https://supabase.com/) project (for auth, agent sync, and usage tracking)
-- A [Gemini API key](https://aistudio.google.com/apikey) (or other provider keys)
-- A **[Wonderland Key](#environment-variables)** for backend API access
+- A [Gemini API key](https://aistudio.google.com/apikey) (server-side, for Gemini models)
+- A **[Wonderland key](#environment-variables)** for backend API access
 - (Optional) A [Stripe](https://stripe.com/) account for subscription billing
 
 ### Installation
@@ -104,27 +104,31 @@ npm install
 Create a `.env.local` file in the project root:
 
 ```env
-# Required: Gemini API key for Google AI provider
+# Server-side provider keys (never exposed to browsers)
 GEMINI_API_KEY=your_gemini_api_key
-
-# Required: Wonderland master key for backend API authentication
-WONDERLAND_MASTER_KEY=your_master_key
-
-# Required: Supabase credentials
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-
-# Optional: Additional provider keys
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
-# ... add any other provider keys your agents need
+
+# Required: Wonderland master keys for backend API authentication.
+# Use a strong random value. If left empty the proxy REJECTS all /api/chat
+# requests (it fails closed, it does not allow all keys).
+WONDERLAND_KEYS=your_master_key
+
+# Required: Supabase credentials
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
+# Optional: restrict CORS to your frontend origin(s), comma-separated.
+# If omitted, only same-origin (server-served) requests are allowed.
+ALLOWED_ORIGINS=https://your-domain.com
 
 # Optional: Stripe keys (for subscription billing)
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 ```
 
-> **Note:** The `.env.example` file in the root provides a template.
+> **Note:** The `.env.example` file in the root provides a template. In development, Vite also accepts `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` for the frontend build.
 
 ### Run Locally
 
@@ -292,7 +296,7 @@ The Express server (`server/index.ts`) acts as a unified proxy for all model pro
 
 ### Authentication
 
-All `/api/chat` and `/api/chat/stream` requests require a valid `wonderlandKey` in the request body. This is validated against the `WONDERLAND_MASTER_KEY` environment variable on the server.
+All `/api/chat` and `/api/chat/stream` requests require a valid `wonderlandKey` in the request body. This is validated against the `WONDERLAND_KEYS` environment variable on the server.
 
 ---
 
@@ -317,10 +321,10 @@ This project includes a `railway.json` for zero-config deployment on Railway.
 
 1. Push your repo to GitHub and connect it to Railway.
 2. Set the required environment variables in the Railway dashboard:
-   - `WONDERLAND_MASTER_KEY`
+   - `WONDERLAND_KEYS`
    - `GEMINI_API_KEY`
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
    - Any other provider keys your agents need
 3. Railway will auto-detect `railway.json`, install deps, build the frontend, and start the server.
 4. A health check at `/api/health` ensures your service stays up.
@@ -343,7 +347,7 @@ This will run both the Vite dev server and the Express backend.
 
 ### Environment Variables for Production
 
-Ensure all environment variables are set on your hosting platform (Vercel, Railway, Fly.io, etc.). The backend requires `WONDERLAND_MASTER_KEY` and `GEMINI_API_KEY` at minimum.
+Ensure all environment variables are set on your hosting platform (Vercel, Railway, Fly.io, etc.). The backend requires `WONDERLAND_KEYS` and `GEMINI_API_KEY` at minimum.
 
 ---
 

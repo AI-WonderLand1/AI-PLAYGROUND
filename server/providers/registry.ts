@@ -373,6 +373,7 @@ export async function callModelStreaming(
           'Authorization': `Bearer ${openrouterKey}`,
         },
         body: JSON.stringify(orBody),
+        signal: AbortSignal.timeout(120000),
       });
 
       if (res.ok) return res;
@@ -463,6 +464,7 @@ export async function callModel(
           'Authorization': `Bearer ${openrouterKey}`,
         },
         body: JSON.stringify(orBody),
+        signal: AbortSignal.timeout(120000),
       });
 
       if (res.ok) {
