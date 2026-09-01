@@ -58,3 +58,8 @@ Deploy anywhere Node runs — `railway.json` is included for one-click Railway d
 ## Security
 
 See [SECURITY.md](SECURITY.md) to report a vulnerability privately.
+
+
+## License
+
+Prosperity Public License 3.0.0. See [`LICENSE`](LICENSE) for the full terms.
