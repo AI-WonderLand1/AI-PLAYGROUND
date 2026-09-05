@@ -8,12 +8,28 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build frontend
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run build
+
       - name: Set up SSH agent
-        uses: webfactory/ssh-agent@v0.5.4
+        uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
@@ -22,6 +38,16 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H 209.50.53.112 >> ~/.ssh/known_hosts
 
-      - name: Deploy via rsync
+      - name: Sync application source
         run: |
-          rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" ./ root@209.50.53.112:/var/www/html/
+          rsync -avz --delete \
+            --exclude node_modules \
+            --exclude dist \
+            -e "ssh -o StrictHostKeyChecking=no" \
+            ./ root@209.50.53.112:/var/www/html/
+
+      - name: Publish built frontend
+        run: |
+          rsync -avz \
+            -e "ssh -o StrictHostKeyChecking=no" \
+            dist/ root@209.50.53.112:/var/www/html/
