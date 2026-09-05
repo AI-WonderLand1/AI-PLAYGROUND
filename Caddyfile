@@ -1,7 +1,13 @@
-ai-playground.dreammakerhub.website {
-    reverse_proxy localhost:3000
+playground.dreammakerhub.website, ai-playground.dreammakerhub.website {
+    encode zstd gzip
 
-    handle_path /api/* {
+    handle /api/* {
         reverse_proxy localhost:3001
+    }
+
+    handle {
+        root * /var/www/html
+        try_files {path} /index.html
+        file_server
     }
 }
