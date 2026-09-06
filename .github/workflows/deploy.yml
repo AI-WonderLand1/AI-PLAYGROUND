@@ -74,7 +74,15 @@ jobs:
             command -v git >/dev/null || { echo "git is required on the VM" >&2; exit 1; }
             command -v node >/dev/null || { echo "Node.js is required on the VM" >&2; exit 1; }
             command -v npm >/dev/null || { echo "npm is required on the VM" >&2; exit 1; }
-            command -v caddy >/dev/null || { echo "Caddy is required on the VM" >&2; exit 1; }
+
+            if ! command -v caddy >/dev/null 2>&1; then
+              echo "Caddy not found; installing from the VM package repository..."
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y caddy
+            fi
+
+            command -v caddy >/dev/null || { echo "Caddy installation failed" >&2; exit 1; }
 
             if [ -d "$APP_DIR/.git" ]; then
               git -C "$APP_DIR" fetch origin main
