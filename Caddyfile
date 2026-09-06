@@ -1,13 +1,9 @@
 playground.dreammakerhub.website, ai-playground.dreammakerhub.website {
     encode zstd gzip
 
-    handle /api/* {
-        reverse_proxy localhost:3001
-    }
-
-    handle {
-        root * /var/www/html
-        try_files {path} /index.html
-        file_server
-    }
+    # Express serves both the built Vite SPA and /api routes from the same
+    # production process on port 3001. Proxying the whole site keeps Caddy
+    # and the deploy directory in sync and avoids serving stale files from
+    # /var/www/html after a deployment.
+    reverse_proxy 127.0.0.1:3001
 }
