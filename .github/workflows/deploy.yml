@@ -74,15 +74,7 @@ jobs:
             command -v git >/dev/null || { echo "git is required on the VM" >&2; exit 1; }
             command -v node >/dev/null || { echo "Node.js is required on the VM" >&2; exit 1; }
             command -v npm >/dev/null || { echo "npm is required on the VM" >&2; exit 1; }
-
-            if ! command -v caddy >/dev/null 2>&1; then
-              echo "Caddy not found; installing from the VM package repository..."
-              export DEBIAN_FRONTEND=noninteractive
-              apt-get update
-              apt-get install -y caddy
-            fi
-
-            command -v caddy >/dev/null || { echo "Caddy installation failed" >&2; exit 1; }
+            command -v nginx >/dev/null || { echo "nginx is required on the VM" >&2; exit 1; }
 
             if [ -d "$APP_DIR/.git" ]; then
               git -C "$APP_DIR" fetch origin main
@@ -131,8 +123,7 @@ jobs:
             systemctl enable ai-playground.service >/dev/null
             systemctl restart ai-playground.service
 
-            # Verify both the API and the built SPA directly on Express before
-            # touching the public reverse proxy.
+            # Verify both the API and the built SPA directly on Express first.
             healthy=0
             for attempt in 1 2 3 4 5 6 7 8; do
               if curl -fsS http://127.0.0.1:3001/api/health >/dev/null \
@@ -150,23 +141,19 @@ jobs:
               exit 1
             fi
 
-            # Keep Caddy aligned with the production runtime. Older deployments
-            # served /var/www/html while newer deployments build in APP_DIR/dist;
-            # proxying the whole site to Express removes that stale-directory split.
-            install -m 0644 "$APP_DIR/Caddyfile" /etc/caddy/Caddyfile
-            caddy validate --config /etc/caddy/Caddyfile
-            systemctl enable caddy >/dev/null 2>&1 || true
-            systemctl reload caddy || systemctl restart caddy
+            # This VM already uses nginx for ports 80/443 and TLS. Do not install,
+            # start, or overwrite another reverse proxy here. Validate the existing
+            # nginx configuration and verify that its Playground vhost reaches the
+            # production Express process on port 3001.
+            nginx -t
 
-            # A public TLS check can fail when DNS is still assigned to another host
-            # (for example Railway). Report that separately instead of treating it as
-            # an application deployment failure.
             if curl -kfsS \
               --resolve playground.dreammakerhub.website:443:127.0.0.1 \
               https://playground.dreammakerhub.website/ \
               | grep -q '<div id="root"></div>'; then
-              echo "AI Playground API and frontend checks passed through Caddy."
+              echo "AI Playground API and frontend checks passed through nginx."
             else
-              echo "WARNING: App and Caddy are healthy locally, but the local TLS virtual-host check did not pass. Verify the domain DNS/custom-domain target is UpCloud rather than Railway." >&2
+              echo "AI Playground is healthy on port 3001, but the nginx Playground vhost did not return the production SPA." >&2
+              exit 1
             fi
           REMOTE
