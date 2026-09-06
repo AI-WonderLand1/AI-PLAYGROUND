@@ -1,14 +1,26 @@
-name: Deploy to UpCloud
+name: Deploy AI Playground to UpCloud VM
 
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UPCLOUD_SERVER_IP: ${{ vars.UPCLOUD_SERVER_IP || '209.50.53.112' }}
+  UPCLOUD_SSH_USER: ${{ vars.UPCLOUD_SSH_USER || 'root' }}
+  SSH_PRIVATE_KEY: ${{ secrets.UPLOAD_SSH_KEY }}
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-
+    name: Verify AI Playground build
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,26 +39,96 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
 
-      - name: Set up SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    name: Deploy AI Playground to UpCloud
 
-      - name: Add host to known hosts
+    steps:
+      - name: Validate deployment configuration
+        shell: bash
         run: |
+          set -euo pipefail
+          test -n "$UPCLOUD_SERVER_IP" || { echo "Missing repository variable: UPCLOUD_SERVER_IP"; exit 1; }
+          test -n "$SSH_PRIVATE_KEY" || { echo "Missing GitHub secret: UPLOAD_SSH_KEY"; exit 1; }
+          echo "Deploy target: ${UPCLOUD_SSH_USER}@${UPCLOUD_SERVER_IP}"
+
+      - name: Set up SSH
+        shell: bash
+        run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
-          ssh-keyscan -H 209.50.53.112 >> ~/.ssh/known_hosts
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$UPCLOUD_SERVER_IP" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Sync application source
+      - name: Deploy and restart AI Playground
+        shell: bash
         run: |
-          rsync -avz --delete \
-            --exclude node_modules \
-            --exclude dist \
-            -e "ssh -o StrictHostKeyChecking=no" \
-            ./ root@209.50.53.112:/var/www/html/
+          set -euo pipefail
+          ssh "$UPCLOUD_SSH_USER@$UPCLOUD_SERVER_IP" 'bash -s' <<'REMOTE'
+            set -euo pipefail
+            APP_DIR=/opt/AI-PLAYGROUND
 
-      - name: Publish built frontend
-        run: |
-          rsync -avz \
-            -e "ssh -o StrictHostKeyChecking=no" \
-            dist/ root@209.50.53.112:/var/www/html/
+            command -v git >/dev/null || { echo "git is required on the VM" >&2; exit 1; }
+            command -v node >/dev/null || { echo "Node.js is required on the VM" >&2; exit 1; }
+            command -v npm >/dev/null || { echo "npm is required on the VM" >&2; exit 1; }
+
+            if [ -d "$APP_DIR/.git" ]; then
+              git -C "$APP_DIR" fetch origin main
+              git -C "$APP_DIR" reset --hard origin/main
+            else
+              rm -rf "$APP_DIR"
+              git clone --branch main --single-branch https://github.com/AI-WonderLand1/AI-PLAYGROUND.git "$APP_DIR"
+            fi
+
+            cd "$APP_DIR"
+
+            if [ ! -f .env ]; then
+              echo "WARNING: $APP_DIR/.env is missing; provider-backed features may be unavailable until production variables are added." >&2
+            fi
+
+            if [ -f package-lock.json ]; then
+              npm ci --no-audit --no-fund
+            else
+              npm install --no-audit --no-fund
+            fi
+            npm run build
+
+            printf '%s\n' \
+              '[Unit]' \
+              'Description=AI Wonderland Playground' \
+              'After=network-online.target' \
+              'Wants=network-online.target' \
+              '' \
+              '[Service]' \
+              'Type=simple' \
+              'WorkingDirectory=/opt/AI-PLAYGROUND' \
+              'Environment=NODE_ENV=production' \
+              'Environment=PORT=3001' \
+              'EnvironmentFile=-/opt/AI-PLAYGROUND/.env' \
+              'ExecStart=/usr/bin/env npm start' \
+              'Restart=always' \
+              'RestartSec=5' \
+              '' \
+              '[Install]' \
+              'WantedBy=multi-user.target' \
+              > /etc/systemd/system/ai-playground.service
+
+            systemctl daemon-reload
+            systemctl enable ai-playground.service >/dev/null
+            systemctl restart ai-playground.service
+
+            for attempt in 1 2 3 4 5; do
+              if curl -fsS http://127.0.0.1:3001/api/health >/dev/null; then
+                echo "AI Playground health check passed."
+                exit 0
+              fi
+              sleep 3
+            done
+
+            systemctl --no-pager --full status ai-playground.service || true
+            journalctl -u ai-playground.service -n 50 --no-pager || true
+            exit 1
+          REMOTE
