@@ -15,7 +15,7 @@
   "dependencies": {
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
-    "@supabase/supabase-js": "^2.112.2",
+    "@supabase/supabase-js": "^2.115.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.0.5",
     "clsx": "^2.1.1",
