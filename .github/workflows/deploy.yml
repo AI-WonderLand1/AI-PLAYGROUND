@@ -17,7 +17,7 @@ env:
   UPCLOUD_SSH_USER: ${{ vars.UPCLOUD_SSH_USER || 'root' }}
   SSH_PRIVATE_KEY: ${{ secrets.UPCLOUD_SSH_KEY || secrets.UPLOAD_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
   VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || vars.NEXT_PUBLIC_SUPABASE_URL || vars.SUPABASE_URL || secrets.VITE_SUPABASE_URL || secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
-  VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || vars.NEXT_PUBLIC_SUPABASE_ANON_KEY || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY || secrets.VITE_SUPABASE_ANON_KEY || secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY }}
+  VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY || vars.NEXT_PUBLIC_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY || secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY || secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
 jobs:
   build:
@@ -40,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$VITE_SUPABASE_URL" || { echo "Missing Supabase URL. Set VITE_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_URL, or SUPABASE_URL as an Actions variable/secret and grant this repository access." >&2; exit 1; }
-          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Missing Supabase publishable key. Set VITE_SUPABASE_ANON_KEY, NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY as an Actions variable/secret and grant this repository access." >&2; exit 1; }
+          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Missing Supabase publishable key. Set VITE_SUPABASE_ANON_KEY, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY, or legacy NEXT_PUBLIC_SUPABASE_ANON_KEY." >&2; exit 1; }
           case "$VITE_SUPABASE_URL" in
             https://*.supabase.co) ;;
             *) echo "Supabase URL must be an https://*.supabase.co project URL" >&2; exit 1 ;;
@@ -131,8 +131,6 @@ jobs:
               exit 1
             fi
 
-            # Run one production process for both the SPA and API. Express serves
-            # /opt/AI-PLAYGROUND/dist and all /api routes on port 3001.
             printf '%s\n' \
               '[Unit]' \
               'Description=AI Wonderland Playground' \
@@ -157,7 +155,6 @@ jobs:
             systemctl enable ai-playground.service >/dev/null
             systemctl restart ai-playground.service
 
-            # Verify both the API and the built SPA directly on Express first.
             healthy=0
             for attempt in 1 2 3 4 5 6 7 8; do
               if curl -fsS http://127.0.0.1:3001/api/health >/dev/null \
@@ -175,10 +172,6 @@ jobs:
               exit 1
             fi
 
-            # This VM already uses nginx for ports 80/443 and TLS. Do not install,
-            # start, or overwrite another reverse proxy here. Validate the existing
-            # nginx configuration and verify that its Playground vhost reaches the
-            # production Express process on port 3001.
             nginx -t
 
             if curl -kfsS \
