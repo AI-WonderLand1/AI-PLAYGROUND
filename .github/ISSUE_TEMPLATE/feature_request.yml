@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose an improvement to AI-PLAYGROUND
+title: "[Feature]: "
+body:
+  - type: textarea
+    attributes:
+      label: Problem or use case
+      description: What problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed behavior
+      description: Describe the user-visible or API/workflow behavior you want.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Security and provider boundaries
+      description: If this affects provider keys, model routing, workflows, user data, billing, or external URLs, explain the intended permissions and server/client boundary.
+  - type: textarea
+    attributes:
+      label: Alternatives considered
+      description: Optional alternatives or existing features that were considered.
