@@ -1,29 +1,41 @@
 # Security Policy
 
-## Supported Versions
+AI-PLAYGROUND is developed by **AI WONDERLAND INNOVATION** and is under active development.
 
-AI-PLAYGROUND is a rolling-release application. Only the latest `main` branch
-(and active release builds cut from it) receives security updates.
+## Supported versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| latest (`main`) | :white_check_mark: |
-| older branches / tags | :x:                |
+Security fixes are applied to the latest supported `main` branch and active production deployment built from it. Older development branches and abandoned builds are not independently supported.
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-Please do **not** report security vulnerabilities through public GitHub issues.
+Do **not** report exploitable vulnerabilities, credentials, private user data, or working attack details in a public issue or discussion.
 
-Instead, use GitHub's [private vulnerability reporting](https://github.com/AI-WonderLand1/AI-PLAYGROUND/security/advisories/new)
-for this repository, which keeps your report confidential until a fix is ready.
+Preferred reporting paths:
 
-When reporting, please include:
+1. Use GitHub private vulnerability reporting for this repository when available.
+2. Otherwise email **security@dreammakerhub.website**.
 
-- A description of the vulnerability and its impact
-- Step-by-step instructions or a proof of concept to reproduce it
-- Affected files/endpoints (e.g. `server/`, Supabase edge functions, client code)
-- Any suggested mitigations, if you have them
+Include the affected commit or deployment if known, affected endpoint/component, impact, reproduction steps, and a minimal proof of concept when necessary. Redact real credentials and user data.
 
-You can expect an initial response within **5 business days**. If the report is
-accepted, we will work on a patch and publish an advisory with credit once a fix
-is released. If it is declined, we will explain why.
+## Security-sensitive areas
+
+Reports are especially useful when they involve:
+
+- Wonderland-key validation or authentication/authorization bypass;
+- provider credential or BYOK leakage;
+- server/client boundary mistakes that expose long-lived provider keys;
+- prompt/tool injection that crosses an authorization boundary;
+- unsafe workflow/template import or execution;
+- API rate-limit bypass or cost/resource abuse;
+- cross-user project or workflow access;
+- SSRF, XSS, command injection, SQL/NoSQL injection, or remote code execution;
+- unsafe CORS, redirects, WebSocket/stream handling, or file processing;
+- secrets exposed through logs, browser bundles, errors, or repository history.
+
+## Secrets
+
+Do not commit real provider keys, database credentials, access tokens, private keys, or production `.env` files. `.env.example` must contain placeholders only. Long-lived provider credentials should remain behind authenticated server routes wherever practical.
+
+## Current hardening status
+
+Security work is ongoing. The README documents current boundaries and remaining client-side provider integrations that still need migration behind protected server routes. This policy is a reporting and maintenance commitment, not a claim that every possible control is already implemented.
