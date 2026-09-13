@@ -1,64 +1,155 @@
-<div align="center">
+# AI-PLAYGROUND
 
-# AI-WONDERLAND
+AI-PLAYGROUND is the AI Wonderland workflow and multi-model experimentation application. It is intentionally separate from DreamMakerHub's website/world-building surfaces and from NPC-AI-SIM's NPC cognition editor.
 
-**[https://dreammakerhub.website](https://dreammakerhub.website)**
+## Repository role
 
-A multi-agent AI playground: run up to 8 models side-by-side, orchestrate workflows on a visual canvas, and track everything in one hub.
+AI-PLAYGROUND owns:
 
-</div>
+- multi-model AI chat and comparison
+- visual AI/workflow orchestration
+- reusable workflow templates
+- provider routing through the Express backend
+- usage and project-oriented AI experimentation surfaces
 
----
+It does not own NPC brain authoring or the main DreamMakerHub website/3D builder.
 
-## Features
+## Current architecture
 
-- **Multi-Agent Chat** — compare Gemini, GPT, Claude, Llama, DeepSeek, Grok and more, side-by-side
-- **AI-WONDER Canvas** — visual workflow builder with triggers, code, HTTP, and AI agent nodes
-- **Template Library** — import production-ready n8n workflow templates straight onto the canvas
-- **Project Memory Core** — persistent memory nodes injected into agent system prompts
-- **Analytics** — token usage, cost tracking, and request counts in real time
-- **Secure Proxy Backend** — provider keys stay server-side; requests authenticated via Wonderland keys
+```text
+Browser / React + Vite
+        ↓
+Express API
+        ↓
+Wonderland key validation
+        ↓
+Provider registry
+        ↓
+AI providers
+```
 
-## Tech Stack
+The main backend chat routes are:
 
-React 19 · TypeScript · Vite · Tailwind CSS · Three.js · Express · Supabase · Stripe
+| Route | Purpose |
+|---|---|
+| `POST /api/chat` | non-streaming provider call |
+| `POST /api/chat/stream` | streaming provider call |
+| `GET /api/health` | service health check |
+| `/api/templates/*` | workflow/template API |
 
-## Getting Started
+The chat routes validate a Wonderland key and are rate-limited before provider calls are made.
+
+## Tech stack
+
+- React 19
+- TypeScript
+- Vite
+- Tailwind CSS
+- Express 5
+- Supabase
+- Three.js / React Three Fiber
+- Stripe
+
+## Local development
+
+### Recommended runtime
+
+The production workflow currently verifies builds with Node.js 22.
+
+### Install
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/AI-WonderLand1/AI-PLAYGROUND.git
 cd AI-PLAYGROUND
 npm install
+cp .env.example .env
 ```
 
-Create a `.env.local` (see `.env.example` for all options):
+Configure the services you intend to use.
 
-```env
-GEMINI_API_KEY=your_key
-WONDERLAND_KEYS=your_master_key      # required, backend auth
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your_anon_key
-```
-
-Run it:
+### Start the frontend
 
 ```bash
-npm run dev        # frontend → http://localhost:3000
-npm run server     # backend proxy → port 3001
+npm run dev
 ```
 
-## Production
+The Vite development server runs on port 3000.
+
+### Start the backend
+
+In a second terminal:
 
 ```bash
-npm run build      # builds frontend to dist/
+npm run server
 ```
 
-Deploy anywhere Node runs — `railway.json` is included for one-click Railway deploys, or use `pm2 start ecosystem.config.cjs`. Run `supabase-schema.sql` against your Supabase project first.
+The Express API runs on port 3001 by default.
 
-## Security
+### Verify a change
 
-See [SECURITY.md](SECURITY.md) to report a vulnerability privately.
+```bash
+npm run lint
+npm run build
+```
 
+`npm run lint` currently performs a TypeScript no-emit check. A full automated unit/integration test suite is not yet defined in `package.json`.
+
+## Environment configuration
+
+See [`.env.example`](.env.example) for the current configuration inventory.
+
+The preferred production path is to keep provider credentials on the server and route model requests through the Express provider registry.
+
+Some older/provider-specific client utilities still exist in the codebase. Do not place long-lived production credentials in browser code or browser-readable configuration.
+
+## Production deployment
+
+The current production deployment is handled by GitHub Actions and UpCloud:
+
+```text
+main
+  ↓
+verify build
+  ↓
+SSH to UpCloud
+  ↓
+sync repository
+  ↓
+install + build
+  ↓
+systemd service on port 3001
+  ↓
+nginx
+  ↓
+playground.dreammakerhub.website
+```
+
+See [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) for the active deployment workflow.
+
+The workflow performs both internal service checks and an nginx/front-end verification before reporting success.
+
+## Security model
+
+The Express server currently provides:
+
+- Wonderland-key validation for the main chat routes
+- request-body validation
+- rate limiting for chat, streaming chat, and templates
+- configurable CORS origins
+- server-side provider routing
+
+Security work is still ongoing. Client-side provider integrations should be migrated behind authenticated server routes before they are treated as production-safe.
+
+See [`SECURITY.md`](SECURITY.md) for vulnerability reporting.
+
+## Repository organization
+
+Runtime code remains at the top-level application structure. Planning/review documents belong under `docs/`, and reusable/example workflow JSON belongs under `workflows/` rather than being scattered through the runtime root.
+
+## Related repositories
+
+- `dreammakerhub.website` — umbrella platform, projects, WonderBuild, IDE integration, and main world/3D tooling
+- `NPC-AI-SIM` — NPC cognition authoring, memory, perception, personality, actions, and runtime contracts
 
 ## License
 
