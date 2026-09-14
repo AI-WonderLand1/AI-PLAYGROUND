@@ -154,3 +154,8 @@ Runtime code remains at the top-level application structure. Planning/review doc
 ## License
 
 Prosperity Public License 3.0.0. See [`LICENSE`](LICENSE) for the full terms.
+
+## SUPPORT 
+support@dreammakerhub.website
+
+## [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y61YK1ZX)
