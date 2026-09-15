@@ -7,7 +7,7 @@ function hashWonderlandKey(key: string): string {
   return `wonderland:${digest.slice(0, 40)}`;
 }
 
-async function getSupabaseUserId(req: Request): Promise<string | null> {
+export async function getSupabaseUserId(req: Request): Promise<string | null> {
   const authorization = req.get('authorization') || '';
   if (!authorization.toLowerCase().startsWith('bearer ')) return null;
 
@@ -28,8 +28,9 @@ async function getSupabaseUserId(req: Request): Promise<string | null> {
  * Authenticated Supabase users keep the same ID used by the main DreamMakerHub app.
  * API-only clients fall back to a one-way hash of their already-validated Wonderland key.
  */
-export async function resolveMemoryUserId(req: Request, wonderlandKey: string): Promise<string> {
+export async function resolveMemoryUserId(req: Request, wonderlandKey?: string): Promise<string | null> {
   const supabaseUserId = await getSupabaseUserId(req);
   if (supabaseUserId) return supabaseUserId;
+  if (!wonderlandKey) return null;
   return hashWonderlandKey(wonderlandKey);
 }
