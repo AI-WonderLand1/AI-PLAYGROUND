@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
 import { validateWonderlandKey } from './wonderland-keys';
 import { callModel, callModelStreaming } from './providers/registry';
+import { addConversationMemory, injectMemoryContext, isMem0Configured, searchMemories } from './mem0';
+import { resolveMemoryUserId } from './memory-identity';
 import templateRouter from './template-library';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,7 +28,7 @@ app.use(cors({
       : isSameOrigin || allowedOrigins.includes(origin);
     cb(null, isAllowed);
   },
-  allowedHeaders: ['Content-Type', 'x-wonderland-key'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-wonderland-key'],
 }));
 
 const distPath = path.resolve(__dirname, '..', 'dist');
@@ -38,7 +40,7 @@ if (process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY) {
   app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
 }
 
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -76,16 +78,36 @@ function validateChatBody(body: any): { ok: boolean; error?: string } {
   if (!Array.isArray(messages) || messages.length === 0) {
     return { ok: false, error: 'Missing required field: messages (non-empty array)' };
   }
+  if (messages.length > 100) {
+    return { ok: false, error: 'Too many messages.' };
+  }
   for (const msg of messages) {
     if (
       !msg || typeof msg !== 'object' ||
       typeof msg.content !== 'string' ||
+      msg.content.length > 50000 ||
       (msg.role !== 'user' && msg.role !== 'assistant' && msg.role !== 'system')
     ) {
-      return { ok: false, error: 'Each message must be { role: "user"|"assistant"|"system", content: string }' };
+      return { ok: false, error: 'Each message must be { role: "user"|"assistant"|"system", content: string } with content under 50,000 characters' };
     }
   }
   return { ok: true };
+}
+
+async function prepareMemoryContext(req: express.Request, wonderlandKey: string, messages: any[]) {
+  const memoryUserId = await resolveMemoryUserId(req, wonderlandKey);
+  const lastUserMessage = [...messages].reverse().find(message => message.role === 'user');
+
+  if (!lastUserMessage || !isMem0Configured()) {
+    return { memoryUserId, lastUserMessage, modelMessages: messages };
+  }
+
+  const memories = await searchMemories(memoryUserId, lastUserMessage.content);
+  return {
+    memoryUserId,
+    lastUserMessage,
+    modelMessages: injectMemoryContext(messages, memories),
+  };
 }
 
 app.post('/api/chat', chatLimiter, async (req, res) => {
@@ -97,7 +119,7 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
     return;
   }
 
-  if (!wonderlandKey) {
+  if (!wonderlandKey || typeof wonderlandKey !== 'string') {
     res.status(401).json({ error: 'Missing Wonderland key. Provide wonderlandKey in request body.' });
     return;
   }
@@ -108,7 +130,16 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
   }
 
   try {
-    const result = await callModel(model, messages, config || {});
+    const { memoryUserId, lastUserMessage, modelMessages } = await prepareMemoryContext(req, wonderlandKey, messages);
+    const result = await callModel(model, modelMessages, config || {});
+
+    if (lastUserMessage && typeof result.content === 'string' && result.content.trim()) {
+      void addConversationMemory(memoryUserId, [
+        { role: 'user', content: lastUserMessage.content },
+        { role: 'assistant', content: result.content },
+      ]);
+    }
+
     res.json(result);
   } catch (err: any) {
     console.error(`/api/chat error for model ${model}:`, err.message);
@@ -125,7 +156,7 @@ app.post('/api/chat/stream', streamLimiter, async (req, res) => {
     return;
   }
 
-  if (!wonderlandKey) {
+  if (!wonderlandKey || typeof wonderlandKey !== 'string') {
     res.status(401).json({ error: 'Missing Wonderland key.' });
     return;
   }
@@ -136,7 +167,16 @@ app.post('/api/chat/stream', streamLimiter, async (req, res) => {
   }
 
   try {
-    const providerResponse = await callModelStreaming(model, messages, config || {});
+    const { memoryUserId, lastUserMessage, modelMessages } = await prepareMemoryContext(req, wonderlandKey, messages);
+    const providerResponse = await callModelStreaming(model, modelMessages, config || {});
+
+    // Streaming provider formats differ, so store the user turn immediately and
+    // let Mem0 extract durable facts from it without buffering or exposing the stream.
+    if (lastUserMessage) {
+      void addConversationMemory(memoryUserId, [
+        { role: 'user', content: lastUserMessage.content },
+      ]);
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -163,7 +203,11 @@ app.post('/api/chat/stream', streamLimiter, async (req, res) => {
 });
 
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: Date.now() });
+  res.json({
+    status: 'ok',
+    timestamp: Date.now(),
+    memory: { mem0Configured: isMem0Configured() },
+  });
 });
 
 // Unknown API paths get a JSON 404 (the SPA fallback below is for client routes only).
