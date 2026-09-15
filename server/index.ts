@@ -6,7 +6,7 @@ import rateLimit from 'express-rate-limit';
 import { validateWonderlandKey } from './wonderland-keys';
 import { callModel, callModelStreaming } from './providers/registry';
 import { addConversationMemory, injectMemoryContext, isMem0Configured, searchMemories } from './mem0';
-import { resolveMemoryUserId } from './memory-identity';
+import { getSupabaseUserId, resolveMemoryUserId } from './memory-identity';
 import templateRouter from './template-library';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -94,17 +94,40 @@ function validateChatBody(body: any): { ok: boolean; error?: string } {
   return { ok: true };
 }
 
-async function prepareMemoryContext(req: express.Request, wonderlandKey: string, messages: any[]) {
+async function authenticateChatRequest(
+  req: express.Request,
+  wonderlandKey: unknown,
+): Promise<{ ok: true; memoryUserId: string } | { ok: false; status: number; error: string }> {
+  const supabaseUserId = await getSupabaseUserId(req);
+  if (supabaseUserId) {
+    return { ok: true, memoryUserId: supabaseUserId };
+  }
+
+  if (typeof wonderlandKey !== 'string' || !wonderlandKey) {
+    return { ok: false, status: 401, error: 'Authenticate with a Supabase bearer token or Wonderland key.' };
+  }
+
+  if (!validateWonderlandKey(wonderlandKey)) {
+    return { ok: false, status: 403, error: 'Invalid Wonderland key.' };
+  }
+
   const memoryUserId = await resolveMemoryUserId(req, wonderlandKey);
+  if (!memoryUserId) {
+    return { ok: false, status: 401, error: 'Unable to resolve authenticated identity.' };
+  }
+
+  return { ok: true, memoryUserId };
+}
+
+async function prepareMemoryContext(memoryUserId: string, messages: any[]) {
   const lastUserMessage = [...messages].reverse().find(message => message.role === 'user');
 
   if (!lastUserMessage || !isMem0Configured()) {
-    return { memoryUserId, lastUserMessage, modelMessages: messages };
+    return { lastUserMessage, modelMessages: messages };
   }
 
   const memories = await searchMemories(memoryUserId, lastUserMessage.content);
   return {
-    memoryUserId,
     lastUserMessage,
     modelMessages: injectMemoryContext(messages, memories),
   };
@@ -119,22 +142,18 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
     return;
   }
 
-  if (!wonderlandKey || typeof wonderlandKey !== 'string') {
-    res.status(401).json({ error: 'Missing Wonderland key. Provide wonderlandKey in request body.' });
-    return;
-  }
-
-  if (!validateWonderlandKey(wonderlandKey)) {
-    res.status(403).json({ error: 'Invalid Wonderland key.' });
+  const auth = await authenticateChatRequest(req, wonderlandKey);
+  if (!auth.ok) {
+    res.status(auth.status).json({ error: auth.error });
     return;
   }
 
   try {
-    const { memoryUserId, lastUserMessage, modelMessages } = await prepareMemoryContext(req, wonderlandKey, messages);
+    const { lastUserMessage, modelMessages } = await prepareMemoryContext(auth.memoryUserId, messages);
     const result = await callModel(model, modelMessages, config || {});
 
     if (lastUserMessage && typeof result.content === 'string' && result.content.trim()) {
-      void addConversationMemory(memoryUserId, [
+      void addConversationMemory(auth.memoryUserId, [
         { role: 'user', content: lastUserMessage.content },
         { role: 'assistant', content: result.content },
       ]);
@@ -156,24 +175,20 @@ app.post('/api/chat/stream', streamLimiter, async (req, res) => {
     return;
   }
 
-  if (!wonderlandKey || typeof wonderlandKey !== 'string') {
-    res.status(401).json({ error: 'Missing Wonderland key.' });
-    return;
-  }
-
-  if (!validateWonderlandKey(wonderlandKey)) {
-    res.status(403).json({ error: 'Invalid Wonderland key.' });
+  const auth = await authenticateChatRequest(req, wonderlandKey);
+  if (!auth.ok) {
+    res.status(auth.status).json({ error: auth.error });
     return;
   }
 
   try {
-    const { memoryUserId, lastUserMessage, modelMessages } = await prepareMemoryContext(req, wonderlandKey, messages);
+    const { lastUserMessage, modelMessages } = await prepareMemoryContext(auth.memoryUserId, messages);
     const providerResponse = await callModelStreaming(model, modelMessages, config || {});
 
     // Streaming provider formats differ, so store the user turn immediately and
     // let Mem0 extract durable facts from it without buffering or exposing the stream.
     if (lastUserMessage) {
-      void addConversationMemory(memoryUserId, [
+      void addConversationMemory(auth.memoryUserId, [
         { role: 'user', content: lastUserMessage.content },
       ]);
     }
