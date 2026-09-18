@@ -45,3 +45,49 @@ export async function signOut() {
   if (!supabase) return;
   return supabase.auth.signOut();
 }
+
+function installAuthenticatedChatFetch() {
+  if (typeof window === 'undefined') return;
+
+  const state = window as typeof window & { __wonderlandAuthFetchInstalled?: boolean };
+  if (state.__wonderlandAuthFetchInstalled) return;
+  state.__wonderlandAuthFetchInstalled = true;
+
+  const originalFetch = window.fetch.bind(window);
+
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    let url: URL;
+    try {
+      const raw = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+      url = new URL(raw, window.location.origin);
+    } catch {
+      return originalFetch(input, init);
+    }
+
+    const isSameOriginChat = url.origin === window.location.origin
+      && (url.pathname === '/api/chat' || url.pathname === '/api/chat/stream');
+
+    if (!isSameOriginChat) {
+      return originalFetch(input, init);
+    }
+
+    const session = await getSession();
+    if (!session?.access_token) {
+      return originalFetch(input, init);
+    }
+
+    const sourceHeaders = input instanceof Request ? input.headers : undefined;
+    const headers = new Headers(init?.headers || sourceHeaders);
+    if (!headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${session.access_token}`);
+    }
+
+    return originalFetch(input, { ...init, headers });
+  };
+}
+
+installAuthenticatedChatFetch();
