@@ -1,0 +1,51 @@
+name: One-time secure legacy credential migration
+on:
+  push:
+    branches: [fix/agent-library-secure-vault-20260918]
+    paths:
+      - .github/workflows/one-time-secure-legacy.yml
+permissions:
+  contents: write
+jobs:
+  harden:
+    if: github.ref == 'refs/heads/fix/agent-library-secure-vault-20260918'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Repair patch and confirm syntax
+        run: |
+          set -euo pipefail
+          node --check scripts/repair-legacy-patch.cjs
+          node scripts/repair-legacy-patch.cjs
+          node --check scripts/secure-legacy-execution.cjs
+      - name: Apply exact-match migration
+        run: node scripts/secure-legacy-execution.cjs
+      - name: Reject old browser credential paths
+        run: |
+          set -euo pipefail
+          ! grep -Fq "localStorage.getItem('openrouter_api_key')" src/components/Playground.tsx
+          ! grep -Fq "localStorage.getItem('mc_key_openrouter')" src/components/AIWonderCanvas.tsx
+          ! grep -Fq "localStorage.getItem('wonderland_master_key')" src/components/AIWonderCanvas.tsx
+          git diff --check
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        run: npm run lint
+      - name: Build
+        run: npm run build
+      - name: Commit only verified changes and remove temporary scripts
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm scripts/secure-legacy-execution.cjs scripts/repair-legacy-patch.cjs .github/workflows/one-time-secure-legacy.yml
+          git add src/components/Playground.tsx src/components/AIWonderCanvas.tsx src/components/nodes/SchemaField.tsx src/types.ts
+          git diff --cached --check
+          git commit -m 'Route canvas and chat through credential IDs; sanitize snapshots and fail closed'
+          git push origin HEAD:fix/agent-library-secure-vault-20260918
