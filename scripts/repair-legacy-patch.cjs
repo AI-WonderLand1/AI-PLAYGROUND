@@ -1,0 +1,12 @@
+const fs = require('node:fs');
+const target = 'scripts/secure-legacy-execution.cjs';
+let script = fs.readFileSync(target, 'utf8');
+const start = script.indexOf("  source = once(source, '        return (\\n          <React.Fragment key=");
+const end = script.indexOf('  return source;', start);
+if (start < 0 || end < 0) throw new Error('Could not locate the exact schema-fields patch block');
+const corrected = "  source = once(source, '        return (\\n          <React.Fragment key={`${field.key}-${i}`}>', '        if (/^(?:apiKey|n8nApiKey|providerApiKey|secret|password|token|accessToken|clientSecret|authorization|webhookUrl|n8nWebhookUrl|providerBaseUrl|httpHeaders)$/i.test(field.key)) {\\n          return <p key={field.key + i} className={helpCls}>Inline secret or webhook fields are disabled. Configure a server-side credential in <a href=\"/agents\" className=\"underline text-violet-300\">Agent Library</a>.</p>;\\n        }\\n        return (\\n          <React.Fragment key={`${field.key}-${i}`}>', 'hide secret schema fields');\n";
+script = script.slice(0, start) + corrected + script.slice(end);
+const typesPatch = "\nchange('src/types.ts', source => once(source, '    n8nApiKey?: string;', '    n8nApiKey?: string;\\n    credentialId?: string;', 'vault credential field'));\n";
+script = script.replace("console.log('Legacy browser-key paths replaced", typesPatch + "console.log('Legacy browser-key paths replaced");
+fs.writeFileSync(target, script);
+console.log('Repaired schema patch quoting and added workflow credential ID typing.');
