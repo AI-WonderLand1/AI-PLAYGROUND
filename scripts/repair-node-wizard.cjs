@@ -18,5 +18,8 @@ const tail = [
   '  }`;',
 ].join('\n');
 source = source.slice(0, begin) + tail + source.slice(end);
+const oldBoundary = "handlerEnd + '\\n  }'.length";
+if (!source.includes(oldBoundary)) throw new Error('Expected handler splice boundary missing');
+source = source.replace(oldBoundary, "handlerEnd + '\\n  };'.length");
 fs.writeFileSync(path, source);
-console.log('Normalized migration script and preserved exact-match safety assertions.');
+console.log('Normalized migration script and fixed handler splice boundary.');
