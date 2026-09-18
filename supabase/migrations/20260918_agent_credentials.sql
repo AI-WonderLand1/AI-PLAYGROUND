@@ -18,3 +18,9 @@ alter table public.agent_credentials enable row level security;
 -- A browser's anon/authenticated credentials must not directly read ciphertext.
 revoke all on public.agent_credentials from anon, authenticated;
 comment on table public.agent_credentials is 'Server-only AES-256-GCM ciphertext. Never expose ciphertext or keys via client API.';
+
+-- Save only a credential reference with the agent, never the provider key.
+alter table public.agents add column if not exists credential_id uuid;
+alter table public.agents add constraint agents_credential_same_owner
+  foreign key (credential_id, user_id) references public.agent_credentials (id, user_id)
+  on delete set null (credential_id);
