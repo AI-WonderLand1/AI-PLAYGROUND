@@ -1,43 +1,61 @@
-import { useState } from 'react';
-import { ArrowRight, KeyRound, ShieldAlert, X } from 'lucide-react';
+import { useEffect } from 'react';
+import { Key, ShieldAlert, X, Server, CheckCircle } from 'lucide-react';
 
 interface ApiKeysModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-const LEGACY_KEYS = [
-  'openrouter_api_key',
-  'wonderland_master_key',
-  'wonderland_custom_providers',
-  'wonderland_user_api_keys',
-] as const;
-
 export function ApiKeysModal({ isOpen, onClose }: ApiKeysModalProps) {
-  const [legacyPresent, setLegacyPresent] = useState(() => LEGACY_KEYS.some(key => localStorage.getItem(key) !== null));
+  useEffect(() => {
+    // Remove legacy browser-stored provider credentials. Provider secrets now
+    // belong on the server only so XSS/client-bundle access cannot expose them.
+    localStorage.removeItem('openrouter_api_key');
+    localStorage.removeItem('wonderland_custom_providers');
+  }, []);
+
   if (!isOpen) return null;
 
-  function clearLegacy() {
-    if (!window.confirm('Have you re-entered any real API keys in the new vault? Clearing old browser keys can interrupt older chat/provider integrations and cannot be undone.')) return;
-    LEGACY_KEYS.forEach(key => localStorage.removeItem(key));
-    setLegacyPresent(false);
-  }
-
   return (
-    <div role="dialog" aria-modal="true" aria-label="API key management" className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-      <section className="relative w-full max-w-lg space-y-5 rounded-xl border border-slate-700 bg-[#141824] p-6 text-slate-200 shadow-2xl">
-        <button aria-label="Close" onClick={onClose} className="absolute right-4 top-4 text-slate-400 hover:text-white"><X size={20} /></button>
-        <div className="flex items-center gap-2 text-violet-300"><KeyRound size={20} /><h2 className="text-lg font-semibold">Secure agent credentials</h2></div>
-        <p className="text-sm leading-relaxed text-slate-300">The previous API key editor stored secrets in your browser and generated Wonderland tokens that were not issued by the server. That editor is disabled. Save your own provider key or an existing, server-issued Wonderland access key in the authenticated agent vault instead.</p>
-        <a href="/agents" className="flex items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-3 font-semibold text-white hover:bg-violet-500">Open agent library &amp; credential vault <ArrowRight size={16} /></a>
-        {legacyPresent && (
-          <div className="space-y-3 rounded-lg border border-amber-500/60 bg-amber-950/20 p-4 text-sm text-amber-200">
-            <p className="flex items-start gap-2"><ShieldAlert size={18} className="shrink-0" /> Older provider credentials may still be stored in this browser. Re-enter needed keys in the vault before clearing the old copies. Existing chat integrations may need rewiring.</p>
-            <button type="button" onClick={clearLegacy} className="rounded-lg border border-amber-400/70 px-3 py-2 hover:bg-amber-950/40">Clear old browser credentials</button>
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fade-in">
+      <div className="bg-[#141414] border border-[#2a2a2a] max-w-xl w-full p-6 shadow-2xl relative">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-[#555] hover:text-[#E4E3E0] transition-colors"
+          aria-label="Close"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
+        <div className="flex items-center gap-2 text-[#E4E3E0] mb-2">
+          <Key className="w-5 h-5 text-[#b8ff57]" />
+          <h3 className="font-serif italic text-sm uppercase tracking-wider">Provider Credentials</h3>
+        </div>
+        <p className="text-[10px] text-[#777] font-mono uppercase tracking-widest mb-6 pr-8">
+          Secrets are managed on the server and are never stored in the browser.
+        </p>
+
+        <div className="bg-[#0a0a0a] border border-[#1f2235] p-4 rounded-sm mb-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Server className="w-4 h-4 text-[#5b5eff]" />
+            <span className="text-[9px] font-mono text-[#E4E3E0] uppercase tracking-widest font-bold">Server-only configuration</span>
           </div>
-        )}
-        <p className="text-xs text-slate-400">New vault credentials are encrypted server-side; the legacy Playground chat is not yet migrated to this vault.</p>
-      </section>
+          <div className="space-y-2 text-[9px] text-[#808eb5] font-mono leading-relaxed">
+            <p className="flex gap-2"><CheckCircle className="w-3.5 h-3.5 text-[#b8ff57] shrink-0" /> OPENROUTER_API_KEY routes supported models through OpenRouter.</p>
+            <p className="flex gap-2"><CheckCircle className="w-3.5 h-3.5 text-[#b8ff57] shrink-0" /> MEM0AI_API_KEY enables persistent memory retrieval and storage.</p>
+            <p className="flex gap-2"><CheckCircle className="w-3.5 h-3.5 text-[#b8ff57] shrink-0" /> Direct-provider keys can be configured as server environment variables.</p>
+          </div>
+        </div>
+
+        <div className="bg-amber-500/5 border border-amber-500/20 p-4 rounded-sm">
+          <div className="flex items-start gap-2">
+            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <p className="text-[9px] text-[#9a9a9a] font-mono leading-relaxed">
+              Legacy OpenRouter and custom-provider keys previously stored in localStorage are removed automatically when this component loads. Any key that was ever committed to Git history should still be rotated at its provider.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

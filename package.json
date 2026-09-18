@@ -17,23 +17,23 @@
     "@react-three/fiber": "^9.7.0",
     "@supabase/supabase-js": "^2.115.0",
     "@tailwindcss/vite": "^4.3.3",
-    "@vitejs/plugin-react": "^6.0.5",
+    "@vitejs/plugin-react": "^6.1.1",
     "clsx": "^2.1.1",
     "cors": "^2.8.6",
     "cron-parser": "^5.7.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
-    "lucide-react": "^1.41.0",
+    "lucide-react": "^1.45.0",
     "motion": "^13.1.1",
     "react": "^19.0.0",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
-    "stripe": "^22.5.0",
+    "stripe": "^22.6.2",
     "tailwind-merge": "^3.6.0",
     "three": "^0.185.1",
-    "tsx": "^4.23.11",
-    "vite": "^8.2.1"
+    "tsx": "^4.23.13",
+    "vite": "^8.3.0"
   },
   "overrides": {
     "protobufjs": "7.6.5"
@@ -47,6 +47,6 @@
     "autoprefixer": "^10.5.5",
     "tailwindcss": "^4.3.3",
     "typescript": "~7.0.2",
-    "vite": "^8.2.1"
+    "vite": "^8.3.0"
   }
 }
