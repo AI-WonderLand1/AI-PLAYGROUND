@@ -33,7 +33,7 @@
     "tailwind-merge": "^3.6.0",
     "three": "^0.185.1",
     "tsx": "^4.23.13",
-    "vite": "^8.2.1"
+    "vite": "^8.3.0"
   },
   "overrides": {
     "protobufjs": "7.6.5"
@@ -47,6 +47,6 @@
     "autoprefixer": "^10.5.5",
     "tailwindcss": "^4.3.3",
     "typescript": "~7.0.2",
-    "vite": "^8.2.1"
+    "vite": "^8.3.0"
   }
 }
