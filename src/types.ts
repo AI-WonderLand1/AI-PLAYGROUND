@@ -167,6 +167,7 @@ export interface WorkflowNode {
     query?: string;
     n8nWebhookUrl?: string;
     n8nApiKey?: string;
+    credentialId?: string;
     providerId?: string;
     providerBaseUrl?: string;
     providerApiKey?: string;

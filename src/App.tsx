@@ -525,8 +525,9 @@ export default function App() {
           })}
         </nav>
 
-        {/* Far Right: Master Key Badge + Org Badge */}
+        {/* Agent library is a separate page, always discoverable even on narrow screens. */}
         <div className="flex items-center gap-3">
+          <a href="/agents" className="rounded border border-violet-500/50 px-2.5 py-1 text-[10px] font-bold uppercase text-violet-200 hover:bg-violet-950/50">Agent library</a>
           {masterKeyShort && (
             <div className="hidden sm:flex items-center gap-1.5 border border-[#b8ff57]/20 bg-[#b8ff57]/5 px-2.5 py-1 rounded-sm text-[8px] font-mono text-[#b8ff57] tracking-wider">
               <span className="w-1.5 h-1.5 rounded-full bg-[#b8ff57] animate-pulse" />

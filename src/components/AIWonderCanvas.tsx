@@ -15,7 +15,10 @@ import { cn, getOpenRouterModel } from '../utils';
 import { CATALOG_MODELS } from './ModelsCatalog';
 import { TrainingSetCompiler } from './TrainingSetCompiler';
 import { AgentCompiler } from './AgentCompiler';
+import { CredentialPanel } from './canvas/CredentialPanel';
 import { WorkflowTemplate } from '../data/workflowTemplates';
+import { listCredentials, testAgent } from '../lib/agentVaultClient';
+import { hasUnsafeCredentials, sanitizeWorkflowNodes } from './canvas/sanitizeWorkflow';
 import { resolveExpressions, resolveConfig, ExpressionContext } from '../utils/expressionParser';
 import { getNodeSchema, DEFAULT_BASE_URL } from '../data/nodeSchemas';
 import { SchemaFields } from './nodes/SchemaField';
@@ -200,15 +203,6 @@ export function AIWonderCanvas({
   const [creationToolVision, setCreationToolVision] = useState(false);
   const [creationToolMemory, setCreationToolMemory] = useState(true);
 
-  // Credentials state (real CRUD with localStorage persistence)
-  const [credentials, setCredentials] = useState<Array<{ id: string; name: string; type: string; value: string }>>(() => {
-    try { return JSON.parse(localStorage.getItem('aiwonder_credentials') || '[]'); } catch { return []; }
-  });
-  const [credFormName, setCredFormName] = useState('');
-  const [credFormType, setCredFormType] = useState('api_key');
-  const [credFormValue, setCredFormValue] = useState('');
-  const [credFormId, setCredFormId] = useState<string | null>(null);
-
   // Variables state (real CRUD with localStorage persistence)
   const [variables, setVariables] = useState<Array<{ id: string; key: string; value: string }>>(() => {
     try { return JSON.parse(localStorage.getItem('aiwonder_variables') || '[]'); } catch { return []; }
@@ -216,11 +210,6 @@ export function AIWonderCanvas({
   const [varFormKey, setVarFormKey] = useState('');
   const [varFormValue, setVarFormValue] = useState('');
   const [varFormId, setVarFormId] = useState<string | null>(null);
-
-  // Persist credentials
-  useEffect(() => {
-    localStorage.setItem('aiwonder_credentials', JSON.stringify(credentials));
-  }, [credentials]);
 
   // Persist variables
   useEffect(() => {
@@ -244,7 +233,7 @@ export function AIWonderCanvas({
    // Bottom drawer states
    const [isBottomDrawerOpen, setIsBottomDrawerOpen] = useState(true);
    const [bottomDrawerTab, setBottomDrawerTab] = useState<'telemetry' | 'step_results' | 'execution_trace'>('telemetry');
-   const [executionLog, setExecutionLog] = useState<string[]>(['[System] Orchestration Engine initialized.', '[Trigger] Webhook listener connected.']);
+   const [executionLog, setExecutionLog] = useState<string[]>(['[System] Editor ready. No webhook is connected and no workflow has run yet.']);
    const [selectedLogNodeId, setSelectedLogNodeId] = useState<string>('ai-agent-1');
    const [activeTelemetryChip, setActiveTelemetryChip] = useState<'all' | 'error' | 'warning' | 'info'>('all');
    const [telemetrySearch, setTelemetrySearch] = useState('');
@@ -310,7 +299,7 @@ export function AIWonderCanvas({
     const idx = historyIndexRef.current;
     setHistory(prev => {
       const newHistory = prev.slice(0, idx + 1);
-      newHistory.push({ nodes: JSON.parse(JSON.stringify(nodes)), connections: JSON.parse(JSON.stringify(connections)) });
+      newHistory.push({ nodes: sanitizeWorkflowNodes(nodes), connections: JSON.parse(JSON.stringify(connections)) });
       if (newHistory.length > 50) newHistory.shift();
       return newHistory;
     });
@@ -349,7 +338,7 @@ export function AIWonderCanvas({
   const handleCopy = () => {
     const ids = selectedNodeIds.size > 0 ? selectedNodeIds : (selectedNode ? new Set([selectedNode.id]) : new Set());
     if (ids.size === 0) return;
-    const copiedNodes = nodes.filter(n => ids.has(n.id));
+    const copiedNodes = sanitizeWorkflowNodes(nodes.filter(n => ids.has(n.id)));
     const copiedConns = connections.filter(c => ids.has(c.fromId) || ids.has(c.toId));
     setClipboard({ nodes: copiedNodes, connections: copiedConns });
     showNotification(`Copied ${ids.size} node(s)`);
@@ -1338,7 +1327,7 @@ systemPrompt: creationSystemPrompt,
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
-      return parsed.filter((v: any) => v && v.id && v.nodes && v.connections);
+      return parsed.filter((v: any) => v && v.id && Array.isArray(v.nodes) && Array.isArray(v.connections)).map((v: WorkflowVersion) => ({ ...v, nodes: sanitizeWorkflowNodes(v.nodes) }));
     } catch {
       return [];
     }
@@ -1346,7 +1335,7 @@ systemPrompt: creationSystemPrompt,
 
   const persistVersions = (versions: WorkflowVersion[]) => {
     try {
-      localStorage.setItem(WORKFLOW_STORAGE_KEY, JSON.stringify(versions));
+      localStorage.setItem(WORKFLOW_STORAGE_KEY, JSON.stringify(versions.map(v => ({ ...v, nodes: sanitizeWorkflowNodes(v.nodes) }))));
     } catch (err) {
       console.error('Failed to persist workflow versions:', err);
     }
@@ -1357,7 +1346,7 @@ systemPrompt: creationSystemPrompt,
       id: `ver-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       title: workflowTitle,
       timestamp: Date.now(),
-      nodes: JSON.parse(JSON.stringify(nodes)),
+      nodes: sanitizeWorkflowNodes(nodes),
       connections: JSON.parse(JSON.stringify(connections)),
       isActive,
       label: autoLabel || `v${workflowVersions.length + 1}`,
@@ -1378,7 +1367,7 @@ systemPrompt: creationSystemPrompt,
       return;
     }
 
-    setNodes(JSON.parse(JSON.stringify(version.nodes)));
+    setNodes(sanitizeWorkflowNodes(version.nodes));
     setConnections(JSON.parse(JSON.stringify(version.connections)));
     setWorkflowTitle(version.title);
     setIsActive(version.isActive);
@@ -1454,103 +1443,23 @@ systemPrompt: creationSystemPrompt,
   // ─── End Workflow Versioning ───
 
   const handleSaveNdvConfig = (updatedNode: WorkflowNode) => {
-    setNodes(prev => prev.map(n => n.id === updatedNode.id ? updatedNode : n));
+    setNodes(prev => prev.map(n => n.id === updatedNode.id ? sanitizeWorkflowNodes([updatedNode])[0] : n));
     setSelectedNode(null);
     showNotification(`${updatedNode.config.title || updatedNode.label} config saved`);
   };
 
-  // Execute a single AI node via OpenRouter
+  // The workflow editor never handles provider API-key values.
   const executeAINode = async (node: WorkflowNode, inputText: string): Promise<{ output: string; tokens?: number }> => {
     const cfg = node.config;
-    const mode = cfg.executionMode || 'model';
-
-    const postWebhook = async (payload: Record<string, any>): Promise<string> => {
-      const url = cfg.webhookUrl || cfg.n8nWebhookUrl || '';
-      if (!url) throw new Error('Webhook POST selected but no Webhook URL is set.');
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(`Webhook HTTP ${res.status}`);
-      const body = await res.json().catch(() => ({}));
-      return typeof body === 'string' ? body : JSON.stringify(body, null, 2);
-    };
-
-    if (mode === 'webhook') {
-      const out = await postWebhook({ input: inputText, node: node.label, type: node.type });
-      return { output: out };
-    }
-
-    // Resolve credential source: custom on node > saved custom provider > global BYOK
-    const providerId = cfg.providerId || 'custom';
-    const globalKey = localStorage.getItem('mc_key_openrouter');
-    let apiKey = '';
-    let baseUrl = '';
-    let model = '';
-    let authStyle: 'bearer' | 'x-api-key' = 'bearer';
-
-    if (providerId === 'global') {
-      apiKey = globalKey || '';
-      baseUrl = DEFAULT_BASE_URL;
-      model = getOpenRouterModel(cfg.model || '') ?? '';
-    } else if (providerId.startsWith('provider:')) {
-      const saved = loadCustomProviders().find(p => p.id === providerId.slice('provider:'.length));
-      if (!saved) throw new Error(`Saved provider "${providerId}" not found.`);
-      apiKey = saved.apiKey || '';
-      baseUrl = saved.baseUrl || '';
-      model = cfg.model || saved.supportedModels[0] || '';
-      authStyle = saved.authStyle || 'bearer';
-    } else {
-      // Custom on this node (default) — falls back to global key if none entered
-      apiKey = cfg.providerApiKey || globalKey || '';
-      baseUrl = cfg.providerBaseUrl || DEFAULT_BASE_URL;
-      model = getOpenRouterModel(cfg.model || '') ?? '';
-      authStyle = cfg.providerAuthStyle || 'bearer';
-    }
-
-    if (!apiKey || !model) {
-      throw new Error(`No API key or model route for ${node.label}. Add a credential or the global OpenRouter key.`);
-    }
-
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (authStyle === 'x-api-key') {
-      headers['x-api-key'] = apiKey;
-    } else {
-      headers['Authorization'] = `Bearer ${apiKey}`;
-    }
-
-    const res = await fetch(baseUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        messages: [
-          ...(cfg.systemPrompt ? [{ role: 'system', content: cfg.systemPrompt }] : []),
-          { role: 'user', content: inputText }
-        ],
-        temperature: cfg.temperature ?? 0.7,
-        top_p: cfg.topP ?? 0.9,
-        max_tokens: cfg.maxTokens ?? 2048,
-      }),
+    if (hasUnsafeCredentials(cfg as Record<string, unknown>)) throw new Error('Legacy inline secrets are not allowed in workflow nodes. Re-enter the key in Agent Library and select its credential ID.');
+    if (cfg.executionMode && cfg.executionMode !== 'model') throw new Error('Model-to-webhook mode requires an owner-scoped backend webhook executor, not a browser fetch.');
+    if (!cfg.credentialId) throw new Error('Choose an encrypted credential in Agent Library before running this AI node.');
+    const output = await testAgent({
+      credentialId: cfg.credentialId, model: cfg.model || 'gpt-4o-mini',
+      systemInstruction: cfg.systemPrompt || '', prompt: inputText.slice(0, 4000),
     });
-
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
-      throw new Error(errBody?.error?.message || `Model HTTP ${res.status}`);
-    }
-
-    const data = await res.json();
-    const output = data.choices?.[0]?.message?.content || data.content?.[0]?.text || 'Empty response received.';
-
-    if (mode === 'model_webhook') {
-      await postWebhook({ input: inputText, output, model, node: node.label, type: node.type });
-    }
-
-    return {
-      output,
-      tokens: data.usage?.total_tokens,
-    };
+    if (!output.trim()) throw new Error('The provider returned no output.');
+    return { output };
   };
 
   // Get upstream input for a node based on connections
@@ -1574,6 +1483,10 @@ systemPrompt: creationSystemPrompt,
 
   // Run the whole workflow
   const handleExecuteWorkflow = async () => {
+    if (nodes.some(node => hasUnsafeCredentials(node.config as Record<string, unknown>))) {
+      showNotification('Workflow has unsafe inline credentials. Use Agent Library, then remove the old key fields.');
+      return;
+    }
     const startTime = Date.now();
     setExecutionLog(prev => [
       ...prev,
@@ -1691,18 +1604,7 @@ systemPrompt: creationSystemPrompt,
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔀 ${node.label} → ${matchedLabel} (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'code') {
-            const code = cfg.code;
-            if (!code) throw new Error('Code node has no JavaScript to execute');
-            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 💻 Executing code for ${node.label}...`]);
-            const fn = new Function('$input', '$output', '$console', code);
-            const mockConsole = { log: (...args: any[]) => console.log('[CodeNode]', ...args) };
-            const result = fn(input, {}, mockConsole);
-            const outputStr = result === undefined ? 'undefined' : (typeof result === 'string' ? result : JSON.stringify(result, null, 2));
-            setNodeOutputs(prev => ({
-              ...prev,
-              [nodeId]: { status: 'success', output: outputStr, timestamp: Date.now(), duration: Date.now() - nodeStart }
-            }));
-            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — executed (${Date.now() - nodeStart}ms)`]);
+            throw new Error('Code node disabled: execution requires an isolated backend sandbox. Browser JavaScript is not a sandbox.');
           } else if (node.type === 'http') {
             const url = cfg.httpUrl;
             if (!url) throw new Error('HTTP URL is required');
@@ -1714,6 +1616,7 @@ systemPrompt: creationSystemPrompt,
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🌐 ${method} ${url}`]);
             const res = await fetch(url, { method, headers, body });
             const responseText = await res.text();
+            if (!res.ok) throw new Error(`HTTP request failed (${res.status})`);
             const output = JSON.stringify({
               status: res.status,
               statusText: res.statusText,
@@ -1739,23 +1642,7 @@ systemPrompt: creationSystemPrompt,
             }));
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔁 ${node.label} — ${items.length} items (${Date.now() - nodeStart}ms)`]);
           } else if (node.type === 'loop_while') {
-            const conditionExpr = cfg.whileCondition || '$input < 5';
-            const maxIter = cfg.whileMaxIterations ?? 100;
-            const outputs: any[] = [];
-            let iterations = 0;
-            while (iterations < maxIter) {
-              try {
-                const fn = new Function('$input', `return Boolean(${conditionExpr})`);
-                if (!fn(input)) break;
-              } catch { break; }
-              outputs.push(`iteration-${iterations + 1}`);
-              iterations++;
-            }
-            setNodeOutputs(prev => ({
-              ...prev,
-              [nodeId]: { status: 'success', output: JSON.stringify({ iterations, outputs }, null, 2), timestamp: Date.now(), duration: Date.now() - nodeStart }
-            }));
-            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔁 ${node.label} — ${iterations} iterations (${Date.now() - nodeStart}ms)`]);
+            throw new Error('While node requires a validated loop expression and backend execution; browser evaluation is disabled.');
           } else if (node.type === 'merge') {
             const mode = cfg.mergeMode || 'array';
             const upstreamConns = connections.filter(c => c.toId === nodeId);
@@ -2124,30 +2011,9 @@ systemPrompt: creationSystemPrompt,
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏳ ${node.label} — pause completed (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'execute_command') {
-              // Execute Command — treat the command as a JavaScript expression to evaluate against input
-              // (True shell execution requires a backend; in-browser we evaluate JS expressions safely)
-              let result: any;
-              try {
-                // Try to evaluate as JS expression: allow return statements, arrow functions, etc.
-                const fn = new Function('$input', `return (${cfg.command});`);
-                result = fn(input);
-              } catch (e: any) {
-                throw new Error(`execute_command: failed to evaluate as JavaScript expression: ${e.message}. ` +
-                  `Tip: use valid JS like \`return input.toUpperCase()\` or \`input.length\`. For shell commands, configure a backend endpoint.`);
-              }
-              const output = result === undefined ? '' : (typeof result === 'string' ? result : JSON.stringify(result));
-              setNodeOutputs(prev => ({
-                ...prev,
-                [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
-              }));
-              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🖥️ ${node.label} — executed (${Date.now() - nodeStart}ms)`]);
+              throw new Error('Command execution requires an isolated backend runner; no browser shell or arbitrary JavaScript is available.');
             } else if (node.type === 'respond_webhook') {
-              // Respond Webhook — echo the input as the HTTP response body (real behavior)
-              setNodeOutputs(prev => ({
-                ...prev,
-                [nodeId]: { status: 'success', output: input, timestamp: Date.now(), duration: Date.now() - nodeStart }
-              }));
-              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🌐 ${node.label} — webhook responded (${Date.now() - nodeStart}ms)`]);
+              throw new Error('Webhook response requires a real incoming server request. This canvas is not an HTTP listener.');
             } else if (node.type === 'calculator') {
               // Calculator — evaluate a mathematical expression
               const result = evalCalculator(input);
@@ -2157,14 +2023,7 @@ systemPrompt: creationSystemPrompt,
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔢 ${node.label} — calculated (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'serpapi') {
-              // SerpAPI — real Google search via SerpAPI (requires API key)
-              const apiKey = cfg.providerApiKey || cfg.apiKey || '';
-              const output = await callSerpApi(input, apiKey);
-              setNodeOutputs(prev => ({
-                ...prev,
-                [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
-              }));
-              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔍 ${node.label} — search results fetched (${Date.now() - nodeStart}ms)`]);
+              throw new Error('SerpAPI requires a secure server-side executor.');
             } else if (node.type === 'wikipedia') {
               // Wikipedia — real summary lookup via REST API
               const output = await fetchWikipediaSummary(input);
@@ -2174,14 +2033,7 @@ systemPrompt: creationSystemPrompt,
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📖 ${node.label} — lookup successful (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'wolfram_alpha') {
-              // Wolfram Alpha — real computation via API (requires App ID)
-              const appId = cfg.providerApiKey || cfg.apiKey || '';
-              const output = await callWolframAlpha(input, appId);
-              setNodeOutputs(prev => ({
-                ...prev,
-                [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
-              }));
-              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⚛️ ${node.label} — computation done (${Date.now() - nodeStart}ms)`]);
+              throw new Error('Wolfram Alpha requires a secure server-side executor.');
             } else if (node.type === 'item_list_parser') {
               // Item List Parser — parse input into a JSON array
               const items = parseItems(input);
@@ -2214,24 +2066,12 @@ systemPrompt: creationSystemPrompt,
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🤖 ${node.label} — response generated (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'embeddings_openai' || node.type === 'embeddings_gemini') {
-              // Embeddings — real local feature-hash embedding (deterministic, no API needed)
-              const vector = embedText(input, 256); // 256-dim vector
-              setNodeOutputs(prev => ({
-                ...prev,
-                [nodeId]: { status: 'success', output: JSON.stringify({ vector, dimensions: vector.length }), timestamp: Date.now(), duration: Date.now() - nodeStart }
-              }));
-              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📐 ${node.label} — vector created (${Date.now() - nodeStart}ms)`]);
+              throw new Error('Provider embeddings require a real provider endpoint. Local feature hashing is not OpenAI or Gemini embeddings.');
             } else if (node.type === 'postgres_chat_memory' || node.type === 'redis_chat_memory') {
-              // Chat Memory — real persistent storage via localStorage
-              const key = cfg.memoryKey || 'default';
-              appendChatMemory({ role: 'user', content: input, timestamp: new Date().toISOString(), key });
-              setNodeOutputs(prev => ({
-                ...prev,
-                [nodeId]: { status: 'success', output: JSON.stringify({ stored: true, key, count: loadChatMemory().filter(m => m.key === key).length }), timestamp: Date.now(), duration: Date.now() - nodeStart }
-              }));
-              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 💾 ${node.label} — state saved (${Date.now() - nodeStart}ms)`]);
+              throw new Error('Postgres and Redis memory require an authenticated backend, not browser storage.');
             } else if (node.type === 'in_memory_vector' || node.type === 'pinecone_vector' || node.type === 'pgvector_store') {
-              // Vector Store — real upsert into persisted index
+              if (node.type !== 'in_memory_vector') throw new Error('Remote vector stores require a configured backend. No Pinecone or pgvector write occurred.');
+              // In-memory local vector index:
               const vector = embedText(input, 256);
               const id = `vec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
               upsertVectorDoc({ id, text: input, vector, meta: { source: node.type, timestamp: Date.now() }, createdAt: Date.now() });
@@ -2267,11 +2107,7 @@ systemPrompt: creationSystemPrompt,
               }));
               setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 📥 ${node.label} — documents ingested (${Date.now() - nodeStart}ms)`]);
             } else if (node.type === 'vector_qa') {
-              setNodeOutputs(prev => ({
-                ...prev,
-                [nodeId]: { status: 'success', output: 'Retrieved Answer: The project utilizes a multi-agent swarm for telemetry analysis.', timestamp: Date.now(), duration: Date.now() - nodeStart }
-              }));
-              setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔎 ${node.label} — vector QA answered (${Date.now() - nodeStart}ms)`]);
+              throw new Error('Vector QA needs a real indexed retrieval result; no demonstration answer will be returned.');
             } else if (node.type === 'bitly' || node.type === 'bluesky' || node.type === 'dropbox' || node.type === 'elevenlabs' || node.type === 'gmail_app' || node.type === 'calendar_app' || node.type === 'docs_app' || node.type === 'sheets_app' || node.type === 'perplexity' || node.type === 'pushbullet' || node.type === 'reddit' || node.type === 'rss_read' || node.type === 'x_twitter' || node.type === 'youtube') {
               // Integrated Apps — real HTTP call if webhook/API URL configured, otherwise honest error
               const output = await callWebhookIntegration(node.type, cfg, input);
@@ -2283,28 +2119,18 @@ systemPrompt: creationSystemPrompt,
             } else if (node.type === 'n8n_tool') {
               const webhookUrl = cfg.n8nWebhookUrl || '';
               if (!webhookUrl) {
-                setNodeOutputs(prev => ({
-                  ...prev,
-                  [nodeId]: { status: 'error', output: '', timestamp: Date.now(), duration: Date.now() - nodeStart, error: 'No n8n webhook URL configured' }
-                }));
-                setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ ${node.label} — no webhook URL configured (${Date.now() - nodeStart}ms)`]);
+                throw new Error('No n8n webhook URL configured');
               } else {
                 try {
                   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-                  if (cfg.n8nApiKey) headers['Authorization'] = `Bearer ${cfg.n8nApiKey}`;
+                  if (cfg.n8nApiKey) throw new Error('Inline n8n credentials are disabled. Use a server-side vault integration.');
                   const resp = await fetch(webhookUrl, { method: 'POST', headers, body: input });
+                  if (!resp.ok) throw new Error(`n8n returned HTTP ${resp.status}`);
                   const text = await resp.text();
-                  setNodeOutputs(prev => ({
-                    ...prev,
-                    [nodeId]: { status: resp.ok ? 'success' : 'error', output: text, timestamp: Date.now(), duration: Date.now() - nodeStart, error: resp.ok ? undefined : `HTTP ${resp.status}` }
-                  }));
-                  setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔧 ${node.label} — n8n workflow ${resp.ok ? 'completed' : 'failed'} (${resp.status}, ${Date.now() - nodeStart}ms)`]);
-                } catch (fetchErr: any) {
-                  setNodeOutputs(prev => ({
-                    ...prev,
-                    [nodeId]: { status: 'error', output: '', timestamp: Date.now(), duration: Date.now() - nodeStart, error: fetchErr.message }
-                  }));
-                  setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ ${node.label} — n8n call failed: ${fetchErr.message} (${Date.now() - nodeStart}ms)`]);
+                  setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: text, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
+                  setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — n8n HTTP ${resp.status} (${Date.now() - nodeStart}ms)`]);
+                } catch (error) {
+                  throw error;
                 }
               }
             } else if (node.type === 'calculator' || node.type === 'code_tool' || node.type === 'gmail_tool' || node.type === 'calendar_tool' || node.type === 'docs_tool' || node.type === 'sheets_tool' || node.type === 'http_tool' || node.type === 'mcp_client' || node.type === 'postgres_tool' || node.type === 'redis_tool' || node.type === 'send_email' || node.type === 'serpapi' || node.type === 'wikipedia' || node.type === 'wolfram_alpha') {
@@ -2317,29 +2143,14 @@ systemPrompt: creationSystemPrompt,
                 }));
                 setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔧 ${node.label} — tool executed via webhook (${Date.now() - nodeStart}ms)`]);
               } else if (cfg.code) {
-                try {
-                  const fn = new Function('$input', `return (${cfg.code});`);
-                  const result = fn(input);
-                  const output = result === undefined ? '' : (typeof result === 'string' ? result : JSON.stringify(result));
-                  setNodeOutputs(prev => ({
-                    ...prev,
-                    [nodeId]: { status: 'success', output, timestamp: Date.now(), duration: Date.now() - nodeStart }
-                  }));
-                  setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔧 ${node.label} — tool executed via code (${Date.now() - nodeStart}ms)`]);
-                } catch (e: any) {
-                  throw new Error(`Tool code execution failed: ${e.message}`);
-                }
+                throw new Error('Tool JavaScript requires an isolated backend sandbox; configure a trusted webhook instead.');
               } else {
                 throw new Error(`Tool ${node.type} requires configuration: set webhookUrl/httpUrl for remote calls or code for local JavaScript execution.`);
               }
             } else {
 
-            // Non-AI/HTTP/code nodes: pass input through as output
-            setNodeOutputs(prev => ({
-              ...prev,
-              [nodeId]: { status: 'success', output: input, timestamp: Date.now(), duration: Date.now() - nodeStart }
-            }));
-            setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — completed (${Date.now() - nodeStart}ms)`]);
+            // Unknown nodes are never marked successful just because input passed through.
+            throw new Error(`No executor registered for node type: ${node.type}`);
           }
           nodeSuccess = true;
           showRightNotification(`${node.label} completed`, 'success');
@@ -2472,42 +2283,10 @@ systemPrompt: creationSystemPrompt,
     }));
 
     const callLLM = async (prompt: string) => {
-      const openrouterKey = localStorage.getItem('mc_key_openrouter');
-      if (openrouterKey) {
-        const model = getOpenRouterModel('gemini-3-flash-preview') || 'google/gemini-2.0-flash-001';
-        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openrouterKey}` },
-          body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.3 }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          return data.choices?.[0]?.message?.content || '';
-        }
-      }
-      // Fallback: route through the server proxy (no client-side keys)
-      const wonderlandKey = localStorage.getItem('wonderland_master_key');
-      if (wonderlandKey) {
-        try {
-          const res = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model: 'gemini-3-flash-preview',
-              messages: [{ role: 'user', content: prompt }],
-              config: { temperature: 0.3 },
-              wonderlandKey,
-            }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            return data.content || '';
-          }
-        } catch (err: any) {
-          console.warn('Proxy analysis call failed.', err);
-        }
-      }
-      return 'Unable to generate analysis (no API key configured).';
+      const credentials = await listCredentials();
+      const credential = credentials.find(item => item.provider === 'openrouter' || item.provider === 'wonderland');
+      if (!credential) throw new Error('Add an OpenRouter or Wonderland credential in Agent Library for AI diagnostics.');
+      return testAgent({ credentialId: credential.id, model: 'gemini-3-flash-preview', systemInstruction: 'Return valid JSON only.', prompt: prompt.slice(0, 4000) });
     };
 
     try {
@@ -2779,112 +2558,8 @@ Respond ONLY in JSON matching this format:
               </div>
             </div>
           )}
-          {/* Credentials panel */}
-          {activeSidebarTab === 'credentials' && (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="p-4 border-b border-[#1f2235]/40 bg-[#0a0b12] shrink-0">
-                <div className="flex items-center gap-2 mb-3">
-                  <Key className="w-3.5 h-3.5 text-[#b8ff57]" />
-                  <h3 className="text-[10px] text-[#b8ff57] uppercase tracking-widest font-bold">// Credentials</h3>
-                </div>
-                <span className="text-[8px] font-mono text-[#b8ff57]">{credentials.length} stored</span>
-              </div>
-
-              {/* Add/Edit form */}
-              <div className="p-3 border-b border-[#1f2235]/40 space-y-2 shrink-0">
-                <input
-                  type="text"
-                  value={credFormName}
-                  onChange={(e) => setCredFormName(e.target.value)}
-                  className="w-full bg-[#141624] border border-[#1f2235] rounded px-2 py-1.5 text-[10px] text-[#e8eaf6] font-mono focus:outline-none focus:border-[#b8ff57]"
-                  placeholder="Credential name (e.g., OpenAI API Key)"
-                />
-                <select
-                  value={credFormType}
-                  onChange={(e) => setCredFormType(e.target.value)}
-                  className="w-full bg-[#141624] border border-[#1f2235] rounded px-2 py-1.5 text-[10px] text-[#e8eaf6] font-mono focus:outline-none focus:border-[#b8ff57]"
-                >
-                  <option value="api_key">API Key</option>
-                  <option value="bearer_token">Bearer Token</option>
-                  <option value="basic_auth">Basic Auth</option>
-                  <option value="oauth2">OAuth2</option>
-                  <option value="database_url">Database URL</option>
-                </select>
-                <input
-                  type="password"
-                  value={credFormValue}
-                  onChange={(e) => setCredFormValue(e.target.value)}
-                  className="w-full bg-[#141624] border border-[#1f2235] rounded px-2 py-1.5 text-[10px] text-[#e8eaf6] font-mono focus:outline-none focus:border-[#b8ff57]"
-                  placeholder="Secret value"
-                />
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      if (!credFormName.trim() || !credFormValue.trim()) {
-                        showNotification('Name and value are required');
-                        return;
-                      }
-                      if (credFormId) {
-                        setCredentials(prev => prev.map(c => c.id === credFormId ? { ...c, name: credFormName, type: credFormType, value: credFormValue } : c));
-                        showNotification('Credential updated');
-                      } else {
-                        setCredentials(prev => [...prev, { id: `cred-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, name: credFormName, type: credFormType, value: credFormValue }]);
-                        showNotification('Credential added');
-                      }
-                      setCredFormName(''); setCredFormValue(''); setCredFormType('api_key'); setCredFormId(null);
-                    }}
-                    className="flex-1 bg-[#b8ff57] hover:bg-[#a5e64e] text-black py-1.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all"
-                  >
-                    {credFormId ? 'Update' : 'Add'} Credential
-                  </button>
-                  {credFormId && (
-                    <button
-                      onClick={() => { setCredFormName(''); setCredFormValue(''); setCredFormType('api_key'); setCredFormId(null); }}
-                      className="px-2 py-1.5 bg-[#141624] border border-[#1f2235] text-[#5e6686] hover:text-white rounded text-[9px] uppercase"
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Credentials list */}
-              <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-1.5">
-                {credentials.length === 0 ? (
-                  <div className="text-center py-8 font-mono text-[8px] text-[#4a5068] tracking-widest">
-                    NO CREDENTIALS STORED<br />
-                    <span className="text-[#b8ff57]/50">Add one above to get started</span>
-                  </div>
-                ) : (
-                  credentials.map(c => (
-                    <div key={c.id} className="border border-[#1f2235]/40 bg-[#0c0d12] rounded p-2.5 hover:border-[#333] transition-all">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[8px] bg-[#1a1c2e] border border-[#1f2235] text-[#b8ff57] px-1 py-0.2 rounded font-mono uppercase tracking-widest leading-none">
-                          {c.type.replace('_', ' ')}
-                        </span>
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => { setCredFormId(c.id); setCredFormName(c.name); setCredFormType(c.type); setCredFormValue(c.value); }}
-                            className="text-[#4c5475] hover:text-[#b8ff57] p-0.5"
-                          >
-                            <Settings className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={() => { setCredentials(prev => prev.filter(x => x.id !== c.id)); showNotification('Credential deleted'); }}
-                            className="text-[#444] hover:text-red-500 p-0.5"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                      <h4 className="text-[10px] font-semibold text-[#e8eaf6] truncate">{c.name}</h4>
-                      <p className="text-[8px] text-[#4c5475] font-mono">{'•'.repeat(Math.min(c.value.length, 20))}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
+          {/* Secure credential UI is isolated from the workflow canvas engine. */}
+          {activeSidebarTab === 'credentials' && <CredentialPanel onNotice={showNotification} />}
           {/* Executions panel */}
           {activeSidebarTab === 'executions' && (
             <div className="flex-1 overflow-y-auto p-4">

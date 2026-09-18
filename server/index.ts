@@ -8,6 +8,7 @@ import { callModel, callModelStreaming } from './providers/registry';
 import { addConversationMemory, injectMemoryContext, isMem0Configured, searchMemories } from './mem0';
 import { getSupabaseUserId, resolveMemoryUserId } from './memory-identity';
 import templateRouter from './template-library';
+import agentVaultRouter from './agent-vault';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

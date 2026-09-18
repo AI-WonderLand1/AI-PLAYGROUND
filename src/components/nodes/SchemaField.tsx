@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { NodeField, FieldOption, DEFAULT_BASE_URL } from '../../data/nodeSchemas';
-import { loadCustomProviders } from '../../lib/providers/registry';
+import { listCredentials, type CredentialSummary } from '../../lib/agentVaultClient';
 import { useExpressionAutocomplete, ExpressionDropdown, NodeOutputInfo } from './ExpressionAutocomplete';
 
 export type ConfigPatch = Record<string, any>;
@@ -20,86 +20,24 @@ const labelCls = 'text-[9px] text-slate-400 uppercase font-bold';
 const helpCls = 'text-[8px] text-[#4a5068] mt-1 leading-relaxed';
 
 function CredentialField({ config, onChange }: { config: Record<string, any>; onChange: (p: ConfigPatch) => void }) {
-  const saved = loadCustomProviders();
-  const source = (config.providerId as string) || 'custom';
-  const authStyle = (config.providerAuthStyle as string) || 'bearer';
-  const baseUrl = (config.providerBaseUrl as string) || DEFAULT_BASE_URL;
-
-  const set = (patch: ConfigPatch) => onChange(patch);
-
-  return (
-    <div className="space-y-2">
-      <div className="space-y-1">
-        <label className={labelCls}>Credential Source</label>
-        <select
-          value={source}
-          onChange={(e) => set({ providerId: e.target.value })}
-          className={inputCls}
-        >
-          <option value="custom">Custom on this node</option>
-          <option value="global">Global BYOK (OpenRouter)</option>
-          {saved.map(p => (
-            <option key={p.id} value={`provider:${p.id}`}>Saved: {p.name}</option>
-          ))}
-        </select>
-      </div>
-
-      {source === 'custom' && (
-        <>
-          <div className="space-y-1">
-            <label className={labelCls}>Base URL</label>
-            <input
-              type="text"
-              value={baseUrl}
-              onChange={(e) => set({ providerBaseUrl: e.target.value })}
-              placeholder={DEFAULT_BASE_URL}
-              className={`${inputCls} font-mono`}
-            />
-          </div>
-          <div className="space-y-1">
-            <label className={labelCls}>API Key</label>
-            <input
-              type="password"
-              value={(config.providerApiKey as string) || ''}
-              onChange={(e) => set({ providerApiKey: e.target.value })}
-              placeholder="sk-..."
-              className={`${inputCls} font-mono`}
-              autoComplete="off"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className={labelCls}>Auth Style</label>
-            <select
-              value={authStyle}
-              onChange={(e) => set({ providerAuthStyle: e.target.value })}
-              className={inputCls}
-            >
-              <option value="bearer">Bearer Token</option>
-              <option value="x-api-key">X-API-Key Header</option>
-            </select>
-          </div>
-        </>
-      )}
-
-      {source === 'global' && (
-        <p className={helpCls}>
-          Uses the global OpenRouter key (<span className="text-[#5b5eff] font-mono">mc_key_openrouter</span>) saved in
-          your keys. No key is entered here. The AI Wonder Assistant tab uses its own server-side key — separate from
-          this selector.
-        </p>
-      )}
-
-      {source.startsWith('provider:') && (
-        <p className={helpCls}>
-          Uses the base URL and key stored for{' '}
-          <span className="text-[#5b5eff] font-mono">
-            {saved.find(p => p.id === source.slice('provider:'.length))?.name || 'this provider'}
-          </span>
-          . Edit it in API Keys.
-        </p>
-      )}
-    </div>
-  );
+  const [saved, setSaved] = useState<CredentialSummary[]>([]);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    listCredentials().then(items => { if (active) setSaved(items); })
+      .catch(err => { if (active) setError(err instanceof Error ? err.message : 'Vault unavailable'); });
+    return () => { active = false; };
+  }, []);
+  return <div className="space-y-2">
+    <label className={labelCls}>Encrypted server credential</label>
+    <select className={inputCls} value={config.credentialId || ''} onChange={event => onChange({ credentialId: event.target.value })}>
+      <option value="">Choose a credential</option>
+      {saved.map(item => <option key={item.id} value={item.id}>{item.label} ({item.provider})</option>)}
+    </select>
+    {error && <p role="alert" className="text-red-300 text-xs">{error}</p>}
+    <a href="/agents" className="block text-violet-300 text-xs underline">Manage keys in Agent Library</a>
+    <p className={helpCls}>Only the credential ID is kept in the workflow. Keys are decrypted by the authenticated backend.</p>
+  </div>;
 }
 
 function FieldControl({
@@ -218,16 +156,7 @@ function FieldControl({
       );
 
     case 'password':
-      return (
-        <input
-          type="password"
-          value={typeof value === 'string' ? value : ''}
-          onChange={(e) => set(e.target.value)}
-          placeholder={field.placeholder}
-          autoComplete="off"
-          className={`${inputCls} font-mono`}
-        />
-      );
+      return <p className={helpCls}>Inline API secrets are disabled. Select an encrypted credential in Agent Library.</p>;
 
     case 'text':
     default:
@@ -271,6 +200,9 @@ export function SchemaFields({ schema, config, onChange, nodeNames = [], nodeOut
         const section = field.section || null;
         const header = section !== lastSection ? section : null;
         lastSection = section;
+        if (/^(?:apiKey|n8nApiKey|providerApiKey|secret|password|token|accessToken|clientSecret|authorization|webhookUrl|n8nWebhookUrl|providerBaseUrl|httpHeaders)$/i.test(field.key)) {
+          return <p key={field.key + i} className={helpCls}>Inline secret or webhook fields are disabled. Configure a server-side credential in <a href="/agents" className="underline text-violet-300">Agent Library</a>.</p>;
+        }
         return (
           <React.Fragment key={`${field.key}-${i}`}>
             {header && (
