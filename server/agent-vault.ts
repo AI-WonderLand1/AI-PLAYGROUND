@@ -116,7 +116,7 @@ router.post('/test', async (req: AuthorizedRequest, res: Response) => {
     if (credential.provider === 'wonderland') {
       if (!validateWonderlandKey(credential.value)) { res.status(403).json({ error: 'Wonderland key is invalid' }); return; }
       const result = await callModel(model, [{ role: 'user', content: prompt }], { systemInstruction });
-      output = typeof result === 'string' ? result : JSON.stringify(result);
+      output = typeof result.content === 'string' ? result.content : '';
     } else {
       const path = credential.provider === 'openrouter' ? MODEL_ROUTES[model] || model : model;
       if (!/^[a-z\d][\w./:-]{0,119}$/i.test(path)) { res.status(400).json({ error: 'Unsupported model identifier' }); return; }

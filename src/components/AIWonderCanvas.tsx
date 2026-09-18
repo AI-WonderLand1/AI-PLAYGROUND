@@ -15,6 +15,7 @@ import { cn, getOpenRouterModel } from '../utils';
 import { CATALOG_MODELS } from './ModelsCatalog';
 import { TrainingSetCompiler } from './TrainingSetCompiler';
 import { AgentCompiler } from './AgentCompiler';
+import { CredentialPanel } from './canvas/CredentialPanel';
 import { WorkflowTemplate } from '../data/workflowTemplates';
 import { resolveExpressions, resolveConfig, ExpressionContext } from '../utils/expressionParser';
 import { getNodeSchema, DEFAULT_BASE_URL } from '../data/nodeSchemas';
@@ -199,9 +200,6 @@ export function AIWonderCanvas({
   const [creationToolCodeExecution, setCreationToolCodeExecution] = useState(false);
   const [creationToolVision, setCreationToolVision] = useState(false);
   const [creationToolMemory, setCreationToolMemory] = useState(true);
-
-  // Legacy keys are never loaded into React state. Only the user's explicit action clears them.
-  const [hasLegacyKeys, setHasLegacyKeys] = useState(() => Boolean(localStorage.getItem('aiwonder_credentials')));
 
   // Variables state (real CRUD with localStorage persistence)
   const [variables, setVariables] = useState<Array<{ id: string; key: string; value: string }>>(() => {
@@ -1692,6 +1690,7 @@ systemPrompt: creationSystemPrompt,
             setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🌐 ${method} ${url}`]);
             const res = await fetch(url, { method, headers, body });
             const responseText = await res.text();
+            if (!res.ok) throw new Error(`HTTP request failed (${res.status})`);
             const output = JSON.stringify({
               status: res.status,
               statusText: res.statusText,
@@ -2220,28 +2219,18 @@ systemPrompt: creationSystemPrompt,
             } else if (node.type === 'n8n_tool') {
               const webhookUrl = cfg.n8nWebhookUrl || '';
               if (!webhookUrl) {
-                setNodeOutputs(prev => ({
-                  ...prev,
-                  [nodeId]: { status: 'error', output: '', timestamp: Date.now(), duration: Date.now() - nodeStart, error: 'No n8n webhook URL configured' }
-                }));
-                setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ ${node.label} — no webhook URL configured (${Date.now() - nodeStart}ms)`]);
+                throw new Error('No n8n webhook URL configured');
               } else {
                 try {
                   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
                   if (cfg.n8nApiKey) headers['Authorization'] = `Bearer ${cfg.n8nApiKey}`;
                   const resp = await fetch(webhookUrl, { method: 'POST', headers, body: input });
+                  if (!resp.ok) throw new Error(`n8n returned HTTP ${resp.status}`);
                   const text = await resp.text();
-                  setNodeOutputs(prev => ({
-                    ...prev,
-                    [nodeId]: { status: resp.ok ? 'success' : 'error', output: text, timestamp: Date.now(), duration: Date.now() - nodeStart, error: resp.ok ? undefined : `HTTP ${resp.status}` }
-                  }));
-                  setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 🔧 ${node.label} — n8n workflow ${resp.ok ? 'completed' : 'failed'} (${resp.status}, ${Date.now() - nodeStart}ms)`]);
-                } catch (fetchErr: any) {
-                  setNodeOutputs(prev => ({
-                    ...prev,
-                    [nodeId]: { status: 'error', output: '', timestamp: Date.now(), duration: Date.now() - nodeStart, error: fetchErr.message }
-                  }));
-                  setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ ${node.label} — n8n call failed: ${fetchErr.message} (${Date.now() - nodeStart}ms)`]);
+                  setNodeOutputs(prev => ({ ...prev, [nodeId]: { status: 'success', output: text, timestamp: Date.now(), duration: Date.now() - nodeStart } }));
+                  setExecutionLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ ${node.label} — n8n HTTP ${resp.status} (${Date.now() - nodeStart}ms)`]);
+                } catch (error) {
+                  throw error;
                 }
               }
             } else if (node.type === 'calculator' || node.type === 'code_tool' || node.type === 'gmail_tool' || node.type === 'calendar_tool' || node.type === 'docs_tool' || node.type === 'sheets_tool' || node.type === 'http_tool' || node.type === 'mcp_client' || node.type === 'postgres_tool' || node.type === 'redis_tool' || node.type === 'send_email' || node.type === 'serpapi' || node.type === 'wikipedia' || node.type === 'wolfram_alpha') {
@@ -2701,20 +2690,8 @@ Respond ONLY in JSON matching this format:
               </div>
             </div>
           )}
-          {/* Credentials are managed by the authenticated vault, never in browser storage. */}
-          {activeSidebarTab === 'credentials' && (
-            <div className="flex-1 space-y-4 overflow-y-auto p-4 text-xs text-slate-300">
-              <h3 className="font-bold text-[#b8ff57]">Encrypted credential vault</h3>
-              <p>Use the agent library to store and select your own API key or Wonderland access key. The browser never receives saved key values.</p>
-              <a href="/agents" className="block rounded bg-violet-600 px-3 py-2 text-center font-semibold text-white">Open agent library & vault</a>
-              {hasLegacyKeys && (
-                <div className="space-y-3 rounded border border-amber-500/50 p-3 text-amber-200">
-                  <p>Old credentials are still stored unencrypted in this browser. Re-enter them in the new server vault, then clear this old copy. They are not automatically uploaded.</p>
-                  <button className="rounded border border-amber-400 px-3 py-2" onClick={() => { localStorage.removeItem('aiwonder_credentials'); setHasLegacyKeys(false); showNotification('Legacy browser keys cleared'); }}>Clear old browser keys</button>
-                </div>
-              )}
-            </div>
-          )}
+          {/* Secure credential UI is isolated from the workflow canvas engine. */}
+          {activeSidebarTab === 'credentials' && <CredentialPanel onNotice={showNotification} />}
           {/* Executions panel */}
           {activeSidebarTab === 'executions' && (
             <div className="flex-1 overflow-y-auto p-4">
