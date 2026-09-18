@@ -16,6 +16,7 @@ import { CATALOG_MODELS } from './ModelsCatalog';
 import { TrainingSetCompiler } from './TrainingSetCompiler';
 import { AgentCompiler } from './AgentCompiler';
 import { CredentialPanel } from './canvas/CredentialPanel';
+import { NodeBuilderWizard } from './canvas/NodeBuilderWizard';
 import { WorkflowTemplate } from '../data/workflowTemplates';
 import { listCredentials, testAgent } from '../lib/agentVaultClient';
 import { hasUnsafeCredentials, sanitizeWorkflowNodes } from './canvas/sanitizeWorkflow';
@@ -190,8 +191,10 @@ export function AIWonderCanvas({
   const selectedNodesStartPosRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   // Adding nodes panel
-  const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
+  const [isAddPanelOpen, setIsAddPanelOpen] = useState(() => new URLSearchParams(window.location.search).has('nodeBuilder'));
   const [addPanelSearch, setAddPanelSearch] = useState('');
+  const [draftNode, setDraftNode] = useState<WorkflowNode | null>(null);
+  const [draftStep, setDraftStep] = useState<2 | 3>(2);
   const [spawnCoords, setSpawnCoords] = useState<{ x: number; y: number } | null>(null);
 
   // Agent Creation Form States
@@ -952,16 +955,6 @@ config: {
     const nodeId = `${type}-${Math.random().toString(36).substr(2, 9)}`;
     const newMemoryId = category === 'dream_maker' ? `mem-${Math.random().toString(36).substr(2, 9)}` : undefined;
 
-    // Create a linked global memory node if memory core type
-    if (category === 'dream_maker') {
-      onAddMemory({
-        id: newMemoryId,
-        title: label,
-        type: type as any,
-        content: `Diagnostic context log for ${label}. Complete system details and stack metrics go here.`,
-      });
-    }
-
     const newNode: WorkflowNode = {
       id: nodeId,
       type,
@@ -1010,21 +1003,42 @@ config: {
       memoryId: newMemoryId
     };
 
-    setNodes(prev => [...prev, newNode]);
-    // Auto-connect from previous trigger node if exists and only trigger
-    if (nodes.length === 1 && nodes[0].category === 'trigger') {
-      setConnections(prev => [...prev, {
-        id: `conn-${Math.random().toString(36).substr(2, 9)}`,
-        fromId: nodes[0].id,
-        toId: nodeId
-      }]);
-    }
-
-    setExecutionLog(prev => [...prev, `[System] Instantiated Node: ${label} (${type})`]);
+    // Step 1 selects a type; do not mutate the canvas before review.
+    setDraftNode(newNode);
+    setDraftStep(2);
     setIsAddPanelOpen(false);
     setSpawnCoords(null);
-    showNotification(`${label} added to grid`);
   };
+
+  const commitDraftNode = () => {
+    if (!draftNode) return;
+    const title = (draftNode.config.title || draftNode.label).trim();
+    if (!title || hasUnsafeCredentials(draftNode.config as Record<string, unknown>)) {
+      showNotification('Remove unsafe credential fields and enter a node name before adding.');
+      return;
+    }
+    const newNode = sanitizeWorkflowNodes([{ ...draftNode, label: title }])[0];
+    pushHistory();
+    if (newNode.category === 'dream_maker') {
+      onAddMemory({
+        id: newNode.memoryId,
+        title,
+        type: newNode.type as MemoryNode['type'],
+        content: '',
+      });
+    }
+    setNodes(previous => [...previous, newNode]);
+    if (nodes.length === 1 && nodes[0].category === 'trigger') {
+      setConnections(previous => [...previous, {
+        id: 'conn-' + Math.random().toString(36).slice(2, 11),
+        fromId: nodes[0].id,
+        toId: newNode.id,
+      }]);
+    }
+    setExecutionLog(previous => [...previous, '[System] Added node ' + title + ' (' + newNode.type + ') to the canvas. Not executed.']);
+    setDraftNode(null);
+    showNotification(title + ' added to canvas. Run it to verify execution.');
+  }
 
 // Import a template workflow
 const handleImportTemplate = (template: WorkflowTemplate) => {
@@ -3799,6 +3813,15 @@ Respond ONLY in JSON matching this format:
 
       </div>
 
+      {draftNode && <NodeBuilderWizard
+        draft={draftNode}
+        step={draftStep}
+        onChange={setDraftNode}
+        onBack={() => { if (draftStep === 3) setDraftStep(2); else { setDraftNode(null); setIsAddPanelOpen(true); } }}
+        onNext={() => setDraftStep(3)}
+        onAdd={commitDraftNode}
+        onCancel={() => setDraftNode(null)}
+      />}
       {/* RIGHT SIDEBAR ADD-NODE SLIDE-IN CATALOGUE ("SUMMONED PANEL") */}
       {isAddPanelOpen && (
         <div className="absolute right-0 top-0 bottom-0 w-80 bg-[#0d0e16] border-l border-[#1f2235] shadow-[-10px_0_30px_rgba(0,0,0,0.6)] z-40 flex flex-col font-mono">
@@ -3806,7 +3829,7 @@ Respond ONLY in JSON matching this format:
           <div className="p-4 border-b border-[#1f2235]/40 bg-[#0a0b12] flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-[#b8ff57]" />
-              <span className="text-xs font-bold tracking-wider text-[#e8eaf6] uppercase">Summon Workflow Node</span>
+              <span className="text-xs font-bold tracking-wider text-[#e8eaf6] uppercase">Node builder · Step 1 of 3</span>
             </div>
             <button
               onClick={() => setIsAddPanelOpen(false)}
