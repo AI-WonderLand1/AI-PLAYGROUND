@@ -1,0 +1,42 @@
+name: One-time safe node draft defaults
+on:
+  push:
+    branches: [fix/node-builder-three-step-library-20260918]
+    paths:
+      - .github/workflows/one-time-node-draft-defaults.yml
+permissions:
+  contents: write
+jobs:
+  verify-and-commit:
+    if: github.ref == 'refs/heads/fix/node-builder-three-step-library-20260918'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Make exact-match default fix
+        run: |
+          node --check scripts/fix-node-draft-defaults.cjs
+          node scripts/fix-node-draft-defaults.cjs
+          git diff --check
+      - name: Install and validate
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          node --import tsx --test tests/sanitizeWorkflow.test.ts
+          npm run lint
+          npm run build
+      - name: Commit only verified changes and remove one-time files
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -f scripts/fix-node-draft-defaults.cjs .github/workflows/one-time-node-draft-defaults.yml
+          git add src/components/AIWonderCanvas.tsx
+          git diff --cached --check
+          git commit -m 'Strip legacy secrets from staged node defaults before wizard review'
+          git push origin HEAD:fix/node-builder-three-step-library-20260918
