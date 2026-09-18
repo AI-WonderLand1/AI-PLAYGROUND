@@ -2,81 +2,60 @@ name: Deploy AI Playground to UpCloud VM
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-env:
-  UPCLOUD_SERVER_IP: ${{ vars.UPCLOUD_SERVER_IP || '209.50.53.112' }}
-  UPCLOUD_SSH_USER: ${{ vars.UPCLOUD_SSH_USER || 'root' }}
-  SSH_PRIVATE_KEY: ${{ secrets.UPCLOUD_SSH_KEY || secrets.UPLOAD_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
-  VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || vars.NEXT_PUBLIC_SUPABASE_URL || vars.SUPABASE_URL || secrets.VITE_SUPABASE_URL || secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
-  VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY || vars.NEXT_PUBLIC_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY || secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY || secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+concurrency:
+  group: ai-playground-deploy-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
+    name: Secret-free Playground build
     runs-on: ubuntu-latest
-    name: Verify AI Playground build
+    # Even internal pull requests run contributor-controlled npm scripts.
+    # No private key or production provider token belongs in this job.
+    env:
+      VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-public-placeholder
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up Node 22
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
-
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-
-      # Pull requests, including Dependabot/forks, must build without production
-      # secrets. The values below are public, nonfunctional compile-time fixtures.
-      - name: Set isolated pull-request build configuration
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: |
-          echo 'VITE_SUPABASE_URL=https://ci-placeholder.supabase.co' >> "$GITHUB_ENV"
-          echo 'VITE_SUPABASE_ANON_KEY=ci-public-placeholder' >> "$GITHUB_ENV"
-
-      - name: Validate Supabase frontend configuration
-        if: github.event_name != 'pull_request'
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$VITE_SUPABASE_URL" || { echo "Missing Supabase URL. Set VITE_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_URL, or SUPABASE_URL as an Actions variable/secret and grant this repository access." >&2; exit 1; }
-          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Missing Supabase publishable key. Set VITE_SUPABASE_ANON_KEY, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY, or legacy NEXT_PUBLIC_SUPABASE_ANON_KEY." >&2; exit 1; }
-          case "$VITE_SUPABASE_URL" in
-            https://*.supabase.co) ;;
-            *) echo "Supabase URL must be an https://*.supabase.co project URL" >&2; exit 1 ;;
-          esac
-
-      - name: Build frontend
-        run: npm run build
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
 
   deploy:
-    if: github.event_name != 'pull_request'
+    name: Deploy verified Playground commit
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
-    name: Deploy AI Playground to UpCloud
-
+    environment: production
+    env:
+      UPCLOUD_SERVER_IP: ${{ vars.UPCLOUD_SERVER_IP || '209.50.53.112' }}
+      UPCLOUD_SSH_USER: ${{ vars.UPCLOUD_SSH_USER || 'root' }}
+      SSH_PRIVATE_KEY: ${{ secrets.UPCLOUD_SSH_KEY || secrets.UPLOAD_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
+      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || vars.NEXT_PUBLIC_SUPABASE_URL || vars.SUPABASE_URL || secrets.VITE_SUPABASE_URL || secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY || vars.NEXT_PUBLIC_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY || secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY || secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
     steps:
-      - name: Validate deployment configuration
+      - name: Validate deploy inputs
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$UPCLOUD_SERVER_IP" || { echo "Missing repository variable: UPCLOUD_SERVER_IP"; exit 1; }
-          test -n "$SSH_PRIVATE_KEY" || { echo "Missing GitHub SSH secret: UPCLOUD_SSH_KEY, UPLOAD_SSH_KEY, or SSH_PRIVATE_KEY"; exit 1; }
-          test -n "$VITE_SUPABASE_URL" || { echo "Missing Supabase URL" >&2; exit 1; }
-          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Missing Supabase publishable key" >&2; exit 1; }
-          echo "Deploy target: ${UPCLOUD_SSH_USER}@${UPCLOUD_SERVER_IP}"
-
-      - name: Set up SSH
+          test -n "$UPCLOUD_SERVER_IP" && test -n "$SSH_PRIVATE_KEY" || { echo 'Missing UpCloud host or SSH key'; exit 1; }
+          test -n "$VITE_SUPABASE_URL" && test -n "$VITE_SUPABASE_ANON_KEY" || { echo 'Missing public Supabase build configuration'; exit 1; }
+          case "$VITE_SUPABASE_URL" in https://*.supabase.co) ;; *) echo 'Invalid Supabase URL'; exit 1;; esac
+          for value in "$VITE_SUPABASE_URL" "$VITE_SUPABASE_ANON_KEY"; do
+            [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || { echo 'Multiline frontend config is not supported'; exit 1; }
+          done
+      - name: Configure SSH
         shell: bash
         run: |
           set -euo pipefail
@@ -84,113 +63,62 @@ jobs:
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$UPCLOUD_SERVER_IP" >> ~/.ssh/known_hosts 2>/dev/null
-
-      - name: Upload Supabase frontend configuration
+      - name: Upload public frontend configuration
         shell: bash
         run: |
           set -euo pipefail
           umask 077
-          {
-            printf 'VITE_SUPABASE_URL=%s\n' "$VITE_SUPABASE_URL"
-            printf 'VITE_SUPABASE_ANON_KEY=%s\n' "$VITE_SUPABASE_ANON_KEY"
-          } > /tmp/ai-playground.env.production
-          scp /tmp/ai-playground.env.production \
-            "$UPCLOUD_SSH_USER@$UPCLOUD_SERVER_IP:/tmp/ai-playground.env.production"
-          rm -f /tmp/ai-playground.env.production
-
-      - name: Deploy and restart AI Playground
+          config="$RUNNER_TEMP/ai-playground.env.production"
+          printf 'VITE_SUPABASE_URL=%s\nVITE_SUPABASE_ANON_KEY=%s\n' "$VITE_SUPABASE_URL" "$VITE_SUPABASE_ANON_KEY" > "$config"
+          scp "$config" "$UPCLOUD_SSH_USER@$UPCLOUD_SERVER_IP:/tmp/ai-playground.env.production"
+          rm -f "$config"
+      - name: Deploy exact successful-build commit
         shell: bash
         run: |
           set -euo pipefail
-          ssh "$UPCLOUD_SSH_USER@$UPCLOUD_SERVER_IP" 'bash -s' <<'REMOTE'
+          ssh "$UPCLOUD_SSH_USER@$UPCLOUD_SERVER_IP" "EXPECTED_SHA='$GITHUB_SHA' bash -s" <<'REMOTE'
             set -euo pipefail
+            [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid expected commit SHA'; exit 1; }
             APP_DIR=/opt/AI-PLAYGROUND
-
-            command -v git >/dev/null || { echo "git is required on the VM" >&2; exit 1; }
-            command -v node >/dev/null || { echo "Node.js is required on the VM" >&2; exit 1; }
-            command -v npm >/dev/null || { echo "npm is required on the VM" >&2; exit 1; }
-            command -v nginx >/dev/null || { echo "nginx is required on the VM" >&2; exit 1; }
-            test -s /tmp/ai-playground.env.production || { echo "Supabase frontend configuration was not uploaded" >&2; exit 1; }
-
+            for command in git node npm nginx; do command -v "$command" >/dev/null || { echo "Missing $command"; exit 1; }; done
+            test -s /tmp/ai-playground.env.production || { echo 'Missing frontend configuration'; exit 1; }
             if [ -d "$APP_DIR/.git" ]; then
               git -C "$APP_DIR" fetch origin main
-              git -C "$APP_DIR" reset --hard origin/main
             else
               rm -rf "$APP_DIR"
-              git clone --branch main --single-branch https://github.com/AI-WonderLand1/AI-PLAYGROUND.git "$APP_DIR"
+              git clone --branch main https://github.com/AI-WonderLand1/AI-PLAYGROUND.git "$APP_DIR"
             fi
-
+            git -C "$APP_DIR" cat-file -e "$EXPECTED_SHA^{commit}" || { echo 'Expected commit unavailable on deploy host'; exit 1; }
+            git -C "$APP_DIR" reset --hard "$EXPECTED_SHA"
             cd "$APP_DIR"
-            install -m 0600 /tmp/ai-playground.env.production "$APP_DIR/.env.production"
+            install -m 0600 /tmp/ai-playground.env.production .env.production
             rm -f /tmp/ai-playground.env.production
-
-            if [ ! -f .env ]; then
-              echo "WARNING: $APP_DIR/.env is missing; server-side provider features may be unavailable until production variables are added." >&2
-            fi
-
-            if [ -f package-lock.json ]; then
-              npm ci --no-audit --no-fund
-            else
-              npm install --no-audit --no-fund
-            fi
+            if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
             npm run build
-
             supabase_url="$(sed -n 's/^VITE_SUPABASE_URL=//p' .env.production | head -n 1)"
-            if [ -z "$supabase_url" ] || ! grep -RqsF "$supabase_url" dist; then
-              echo "Production bundle does not contain the configured Supabase URL." >&2
-              exit 1
-            fi
-
-            printf '%s\n' \
-              '[Unit]' \
-              'Description=AI Wonderland Playground' \
-              'After=network-online.target' \
-              'Wants=network-online.target' \
-              '' \
-              '[Service]' \
-              'Type=simple' \
-              'WorkingDirectory=/opt/AI-PLAYGROUND' \
-              'Environment=NODE_ENV=production' \
-              'Environment=PORT=3001' \
-              'EnvironmentFile=-/opt/AI-PLAYGROUND/.env' \
-              'ExecStart=/usr/bin/env npm start' \
-              'Restart=always' \
-              'RestartSec=5' \
-              '' \
-              '[Install]' \
-              'WantedBy=multi-user.target' \
-              > /etc/systemd/system/ai-playground.service
-
+            test -n "$supabase_url" && grep -RqsF "$supabase_url" dist || { echo 'Built SPA does not contain configured Supabase URL'; exit 1; }
+            printf '%s\n' '[Unit]' 'Description=AI Wonderland Playground' 'After=network-online.target' 'Wants=network-online.target' '' '[Service]' 'Type=simple' 'WorkingDirectory=/opt/AI-PLAYGROUND' 'Environment=NODE_ENV=production' 'Environment=PORT=3001' 'EnvironmentFile=-/opt/AI-PLAYGROUND/.env' 'ExecStart=/usr/bin/env npm start' 'Restart=always' 'RestartSec=5' '' '[Install]' 'WantedBy=multi-user.target' > /etc/systemd/system/ai-playground.service
             systemctl daemon-reload
             systemctl enable ai-playground.service >/dev/null
             systemctl restart ai-playground.service
-
             healthy=0
             for attempt in 1 2 3 4 5 6 7 8; do
-              if curl -fsS http://127.0.0.1:3001/api/health >/dev/null \
-                && curl -fsS http://127.0.0.1:3001/ | grep -q '<div id="root"></div>'; then
-                healthy=1
-                break
-              fi
+              if curl -fsS http://127.0.0.1:3001/api/health >/dev/null && curl -fsS http://127.0.0.1:3001/ | grep -q 'id="root"'; then healthy=1; break; fi
               sleep 3
             done
-
-            if [ "$healthy" -ne 1 ]; then
-              echo "AI Playground production process failed health/frontend checks." >&2
-              systemctl --no-pager --full status ai-playground.service || true
-              journalctl -u ai-playground.service -n 80 --no-pager || true
-              exit 1
-            fi
-
+            test "$healthy" -eq 1 || { echo 'Playground backend or frontend failed to become ready'; exit 1; }
             nginx -t
-
-            if curl -kfsS \
-              --resolve playground.dreammakerhub.website:443:127.0.0.1 \
-              https://playground.dreammakerhub.website/ \
-              | grep -q '<div id="root"></div>'; then
-              echo "AI Playground API and frontend checks passed through nginx."
-            else
-              echo "AI Playground is healthy on port 3001, but the nginx Playground vhost did not return the production SPA." >&2
-              exit 1
-            fi
+            echo "Playground commit $EXPECTED_SHA started and passed localhost checks"
           REMOTE
+      - name: Verify public Playground deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 4 --retry-delay 2 https://playground.dreammakerhub.website/api/health >/dev/null
+          html="$(curl -fsS --retry 4 --retry-delay 2 https://playground.dreammakerhub.website/)"
+          grep -q 'id="root"' <<< "$html" || { echo 'Public Playground SPA root missing'; exit 1; }
+          asset="$(grep -oE '/assets/[^" ]+\.js' <<< "$html" | head -n 1 || true)"
+          test -n "$asset" || { echo 'Public Playground JavaScript asset missing'; exit 1; }
+          headers="$(curl -fsSI "https://playground.dreammakerhub.website$asset")"
+          grep -Eiq '^content-type: *(application|text)/(javascript|x-javascript)' <<< "$headers" || { echo 'Playground JavaScript has incorrect MIME type'; exit 1; }
+          echo 'Public Playground API, SPA and JS MIME passed.'
