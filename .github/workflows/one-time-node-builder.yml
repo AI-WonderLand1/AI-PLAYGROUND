@@ -1,0 +1,50 @@
+name: One-time node builder placement correction
+on:
+  push:
+    branches: [fix/node-builder-three-step-library-20260918]
+    paths:
+      - .github/workflows/one-time-node-builder.yml
+permissions:
+  contents: write
+jobs:
+  patch-and-verify:
+    if: github.ref == 'refs/heads/fix/node-builder-three-step-library-20260918'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply exact-match UI move
+        run: |
+          set -euo pipefail
+          node scripts/repair-node-wizard.cjs
+          node --check scripts/patch-node-wizard.cjs
+          node scripts/patch-node-wizard.cjs
+          git diff --check
+      - name: Verify new routes and no automatic node addition
+        run: |
+          set -euo pipefail
+          grep -Fq "path === '/agents' ? <AgentLibraryView />" src/main.tsx
+          grep -Fq 'setDraftNode(newNode)' src/components/AIWonderCanvas.tsx
+          grep -Fq 'Node builder · Step 1 of 3' src/components/AIWonderCanvas.tsx
+          grep -Fq 'onAdd={commitDraftNode}' src/components/AIWonderCanvas.tsx
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        run: npm run lint
+      - name: Build
+        run: npm run build
+      - name: Commit only tested changes, remove temporary scripts
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -f scripts/patch-node-wizard.cjs scripts/repair-node-wizard.cjs .github/workflows/one-time-node-builder.yml
+          git add src/App.tsx src/components/AIWonderCanvas.tsx src/agents/AgentLibrary.tsx
+          git diff --cached --check
+          git commit -m 'Put the three-step flow in node builder and keep library browse-only'
+          git push origin HEAD:fix/node-builder-three-step-library-20260918
