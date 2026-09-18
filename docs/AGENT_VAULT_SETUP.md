@@ -1,33 +1,25 @@
 # Agent library and credential vault rollout
 
-**Status: draft PR only. Do not deploy before migration and an end-to-end two-user security test.**
+**Status: PR #83 merged and deployed on September 18, 2026. Vault setup and cross-user security validation have NOT been confirmed. Do not onboard real API keys until the checklist below is complete.**
 
-## What this does
+The `/agents` page provides three steps: choose an agent, configure a credential and model, test and publish. Saved agents and AI workflow nodes use the authenticated server vault. The editor is not a durable background workflow runner.
 
-`/agents` is a separate three-step agent library: choose a template or saved agent, configure its provider/model/instructions and vault credential, then run a real provider test before saving to Supabase. Saved agents with an assigned credential use the backend vault path in Playground chat. The legacy workflow canvas remains an editor; this does **not** create persistent unattended workers.
+The vault encrypts credentials server-side using AES-256-GCM with a random IV and authentication tag. It returns credential metadata, not saved key values. The key is decrypted only in the backend when contacting a provider. These code properties are not a substitute for production verification.
 
-Secrets are encrypted server-side with AES-256-GCM using a random 12-byte IV, a 16-byte authentication tag, and user/provider associated data. The database stores ciphertext and metadata, not plaintext. API responses show only credential ID, label, provider, and created date. A logged-in user's session token is verified with Supabase Auth before querying the vault; the lookup is also scoped to their user ID. A key must be decrypted server-side to call its provider. Browser Supabase session tokens are separate from provider credentials.
+## Required production setup
 
-## Deployment prerequisites
+1. Identify the Supabase project actually configured for AI-PLAYGROUND. **Do not assume it is the DreamMakerHub or VAULTX project.** Back up that project's database. Apply `supabase/migrations/20260918_agent_credentials.sql` to that verified project and confirm the existing `public.agents` table has a `user_id uuid` column. Verify that anon/authenticated roles cannot SELECT `public.agent_credentials`.
+2. Generate a fresh 32-byte key on a trusted machine using `openssl rand -base64 32`, securely back it up, and inject it into the server-only `CREDENTIALS_ENCRYPTION_KEY` (e.g. through Infisical). Do not use `VITE_`, `NEXT_PUBLIC_`, GitHub source, client bundles, or logs for this secret. Losing it makes stored credentials undecryptable; rotation requires re-encryption.
+3. Supply server-only `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to the Express process. Confirm the process loads the intended Infisical environment. Use HTTPS end-to-end.
+4. Test two distinct accounts. User A stores a disposable, spending-limited provider key, lists metadata, runs a real agent, and publishes. User B must receive denials when listing, deleting, testing, or assigning A's credential ID. Unauthenticated requests should return 401. Confirm failed calls fail closed and secret values never appear in responses, workflow snapshots, logs, or frontend bundles.
+5. Re-enter only needed legacy browser-stored keys into the vault, then deliberately clear obsolete localStorage copies and rotate any provider keys that might have been exposed. Do not silently migrate or destroy users' credentials. Confirm per-user quotas, rate limits, and monitoring before a public beta.
 
-1. Back up your Supabase database and apply `supabase/migrations/20260918_agent_credentials.sql` to the **AI-PLAYGROUND** project only. Confirm the `public.agents` table has a `user_id uuid` column and that the migration runs successfully. The `agent_credentials` table should not have anon/authenticated SELECT permission.
-2. Generate a fresh 32-byte encryption key on a trusted machine, e.g. `openssl rand -base64 32`. Put its exact output in the **server-only** `CREDENTIALS_ENCRYPTION_KEY` secret in Infisical, not `VITE_` variables, Git, logs, or browser devtools. Store a secure backup of the encryption key. Losing the key makes previously saved credentials undecryptable. Rotating it requires a re-encryption plan; `key_version` is reserved for later support.
-3. Configure server-only `SUPABASE_URL` (or `NEXT_PUBLIC_SUPABASE_URL` at the server process) and `SUPABASE_SERVICE_ROLE_KEY`, and ensure the Express process receives all three variables. Never add the service role or encryption key to Vite or frontend config. Ensure HTTPS is in use end-to-end for the public origin.
-4. Use **two distinct test accounts**. Account A adds a test provider key, confirms list response has no secret, tests an agent, and publishes. Account B must not list, delete, test, or assign account A's credential ID. Unauthenticated requests must receive HTTP 401. An unconfigured vault should fail closed. Check that plaintext keys do not appear in server logs, browser storage, browser bundle, or JSON responses. The older browser-local keys require separate cleanup.
-5. Use a low-value test key with a strict spending limit and verify expected provider/network failures show an error. Set up monitoring and usage/billing quotas before opening access to real users.
+## Still incomplete
 
-## Old browser credentials
+- The original canvas remains large. Its editor, inspector, versioning, execution, and scheduler need incremental separation with tests.
+- Browser schedule/cron timers are not durable background jobs. Unsupported Code/Command/While nodes intentionally fail instead of running unsandboxed JavaScript.
+- Fixed-endpoint vault providers do not yet support all historic custom providers. Webhooks with embedded secrets and inline authorization headers remain blocked until a server-backed integration exists.
+- There is no verified end-to-end cross-account test against the production database or live provider, and no confirmed production vault secret configuration in this repository. GitHub Actions build and health checks cannot establish those properties.
+- The legacy server `/api/chat` Wonderland-key route uses configured shared keys; it needs separate per-user issuance, revocation, quota and authentication review before public exposure.
 
-The old canvas and API key screens stored keys in browser localStorage. New screens do not automatically transfer or delete them. Re-enter only legitimate keys in the vault via `/agents`. The screens provide opt-in cleanup of older copies. Consider rotating any real provider keys that may have been exposed through old browser storage or a committed source file. Old custom providers are not yet fully supported by the new fixed-endpoint vault; do not delete their configs before recording what you need.
-
-## Known limitations / do-not-merge checklist
-
-- [ ] Run database migration and verify in a test environment.
-- [ ] Add server-only encryption key and service role in deployed environment.
-- [ ] Run integration tests for cross-user access, encryption tampering, key deletion and errors; current GitHub CI only typechecks/builds.
-- [ ] Migrate or disable remaining legacy Playground provider paths and any workflow-node config fields that directly store provider or n8n secrets.
-- [ ] Split the remaining large canvas component into canvas/editor, runner, inspector, versioning, and sidebar modules without changing behavior.
-- [ ] Create a durable backend workflow runner and scheduler. Code/command/while nodes intentionally fail closed until a properly isolated runner is available. Other unsupported nodes must never produce fake success.
-- [ ] Audit old client provider integration files and remove all plaintext-key and misleading synthetic-key flows.
-
-An approved build or PR merge alone does not perform database migration or inject server secrets.
+The follow-up credential sanitization changes are in PR #84. Do not interpret a merge or a successful deployment check as proof that all production prerequisites have been completed.
