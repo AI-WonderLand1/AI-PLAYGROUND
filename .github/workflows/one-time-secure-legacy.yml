@@ -26,6 +26,8 @@ jobs:
           node --check scripts/secure-legacy-execution.cjs
       - name: Apply exact-match migration
         run: node scripts/secure-legacy-execution.cjs
+      - name: Print generated source around compiler errors
+        run: sed -n '2024,2110{=;p;}' src/components/AIWonderCanvas.tsx
       - name: Reject old browser credential paths
         run: |
           set -euo pipefail
