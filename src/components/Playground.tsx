@@ -6,6 +6,8 @@ import { RobotScene } from './RobotScene';
 import { cn, getOpenRouterModel } from '../utils';
 import { isCustomModel, getCustomProviderForModel, callCustomProvider } from '../lib/providers/registry';
 import { logUsage } from '../lib/usageTracker';
+import { supabase, getSession } from '../lib/supabase';
+import { testAgent } from '../lib/agentVaultClient';
 
 interface PlaygroundProps {
   module: AIModule;
@@ -89,6 +91,26 @@ export function Playground({ module }: PlaygroundProps) {
           .map(ex => `User: ${ex.user}\nModel: ${ex.model}`)
           .join('\n\n');
         prompt = `${trainingText}\n\nUser: ${input}\nModel:`;
+      }
+
+      // Saved agents run through an owner-scoped, server-decrypted credential.
+      // Never fall back to a browser-stored provider key for a saved agent.
+      const session = await getSession();
+      if (session?.user && supabase) {
+        const { data: agent, error: lookupError } = await supabase.from('agents')
+          .select('credential_id').eq('id', module.id).eq('user_id', session.user.id).maybeSingle();
+        if (lookupError) throw new Error('Could not verify your agent credential.');
+        if (agent) {
+          if (!agent.credential_id) throw new Error('This agent needs a credential. Open Agent Library to configure it.');
+          const transcript = [...messages.slice(-6).map(m => m.role + ': ' + m.content), 'user: ' + prompt].join('\n');
+          const output = await testAgent({
+            credentialId: agent.credential_id, model: config.model,
+            systemInstruction: config.systemInstruction || '', prompt: transcript.slice(-4000),
+          });
+          if (!output.trim()) throw new Error('The provider returned an empty response.');
+          setMessages(prev => [...prev, { role: 'assistant', content: output, timestamp: Date.now() }]);
+          return;
+        }
       }
 
       const isImgModel = config.model.includes('image') || config.model.includes('happyhorse') || config.model.includes('banana') || config.model.includes('riverflow');
