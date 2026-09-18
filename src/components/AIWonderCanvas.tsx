@@ -1004,7 +1004,9 @@ config: {
     };
 
     // Step 1 selects a type; do not mutate the canvas before review.
-    setDraftNode(newNode);
+    // Normalize legacy defaults before configuration so harmless HTTP nodes are addable.
+    // Any inherited API key or header is stripped before a draft reaches the wizard.
+    setDraftNode(sanitizeWorkflowNodes([newNode])[0]);
     setDraftStep(2);
     setIsAddPanelOpen(false);
     setSpawnCoords(null);
