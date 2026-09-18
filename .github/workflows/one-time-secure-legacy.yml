@@ -43,7 +43,7 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git rm scripts/secure-legacy-execution.cjs scripts/repair-legacy-patch.cjs scripts/remove-unreachable-legacy.cjs .github/workflows/one-time-secure-legacy.yml
+          git rm -f scripts/secure-legacy-execution.cjs scripts/repair-legacy-patch.cjs scripts/remove-unreachable-legacy.cjs .github/workflows/one-time-secure-legacy.yml
           git add src/components/Playground.tsx src/components/AIWonderCanvas.tsx src/components/nodes/SchemaField.tsx src/types.ts
           git diff --cached --check
           git commit -m 'Route canvas and chat through credential IDs; sanitize snapshots and fail closed'
