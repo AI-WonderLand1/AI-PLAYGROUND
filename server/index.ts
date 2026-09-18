@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import { validateWonderlandKey } from './wonderland-keys';
 import { callModel, callModelStreaming } from './providers/registry';
 import templateRouter from './template-library';
+import agentVaultRouter from './agent-vault';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,7 +27,7 @@ app.use(cors({
       : isSameOrigin || allowedOrigins.includes(origin);
     cb(null, isAllowed);
   },
-  allowedHeaders: ['Content-Type', 'x-wonderland-key'],
+  allowedHeaders: ['Content-Type', 'x-wonderland-key', 'Authorization'],
 }));
 
 const distPath = path.resolve(__dirname, '..', 'dist');
@@ -38,7 +39,16 @@ if (process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY) {
   app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
 }
 
-app.use(express.json());
+app.use(express.json({ limit: '64kb' }));
+
+const vaultLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many credential requests. Please slow down.' },
+});
+app.use('/api/agent-vault', vaultLimiter, agentVaultRouter);
 
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
