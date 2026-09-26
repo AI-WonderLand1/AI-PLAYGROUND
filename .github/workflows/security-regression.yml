@@ -16,6 +16,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - run: node --test tests/deployment-policy.test.mjs
       - run: node --import tsx --test tests/sanitizeWorkflow.test.ts
       - run: npm run lint
       - run: npm run build
