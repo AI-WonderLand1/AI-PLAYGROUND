@@ -234,6 +234,12 @@ app.get('/api/health', (_req, res) => {
     status: 'ok',
     timestamp: Date.now(),
     memory: { mem0Configured: isMem0Configured() },
+    billing: {
+      centralConfigured: Boolean(
+        process.env.DREAMMAKERHUB_INTERNAL_BILLING_KEY?.trim()
+        && (process.env.DREAMMAKERHUB_BILLING_URL || "https://dreammakerhub.website"),
+      ),
+    },
   });
 });
 
