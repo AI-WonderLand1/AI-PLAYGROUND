@@ -159,3 +159,24 @@ Prosperity Public License 3.0.0. See [`LICENSE`](LICENSE) for the full terms.
 support@dreammakerhub.website
 
 ## [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y61YK1ZX)
+
+## DreamMakerHub billing and usage
+
+AI-PLAYGROUND does not own subscriptions or customer credit balances. DreamMakerHub is the billing and entitlement control plane.
+
+For platform-funded model calls:
+
+1. The browser authenticates with the same Supabase Auth project used by DreamMakerHub.
+2. The /api/chat or /api/chat/stream request carries that Bearer access token.
+3. The AI-PLAYGROUND server calls DreamMakerHub's internal billing reservation endpoint with the server-only shared key.
+4. DreamMakerHub verifies the user, plan, included limits, and purchased AI-token balance.
+5. Only an approved reservation proceeds to the upstream model provider.
+6. Usage is written to the unified DreamMakerHub ledger with source ai-playground.
+
+Required server configuration:
+
+- DREAMMAKERHUB_BILLING_URL=https://dreammakerhub.website
+- DREAMMAKERHUB_INTERNAL_BILLING_KEY — same server-only value as DreamMakerHub
+- VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY — the same DreamMakerHub Supabase Auth project
+
+Do not add a separate Stripe subscription or independent paid-token balance to this repository.
