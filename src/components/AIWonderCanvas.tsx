@@ -3996,9 +3996,9 @@ Respond ONLY in JSON matching this format:
               ))}
             </div>
 
-             {/* 5. DreamMakerHub (Memory Core Nodes) */}
+             {/* 5. AI WONDERLAND (Memory Core Nodes) */}
              <div className="space-y-1.5">
-               <h5 className="text-[9px] text-[#b8ff57] uppercase tracking-widest font-bold">// DreamMakerHub</h5>
+               <h5 className="text-[9px] text-[#b8ff57] uppercase tracking-widest font-bold">// AI WONDERLAND</h5>
                {[
                  { type: 'decision', label: 'Decision Node', desc: 'Durable architectural decision context memory' },
                  { type: 'bug', label: 'Bug Node', desc: 'Identified telemetry exceptions with root cause analysis' },
@@ -5563,7 +5563,7 @@ Respond ONLY in JSON matching this format:
             {/* Form */}
             <div className="p-6 space-y-4">
               <p className="text-[10px] text-[#5e6686] leading-relaxed">
-                You are editing a <strong>DreamMakerHub</strong> Memory node. Saving this form will write context logs directly into the global app index, syncing them to model system instructions.
+                You are editing a <strong>AI WONDERLAND</strong> Memory node. Saving this form will write context logs directly into the global app index, syncing them to model system instructions.
               </p>
 
               <div className="space-y-1.5">
