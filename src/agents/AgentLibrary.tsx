@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, CheckCircle2, KeyRound, LockKeyhole, Plus, Trash2 } from 'lucide-react';
 import { supabase, getSession } from '../lib/supabase';
 import { createCredential, deleteCredential, listCredentials, testAgent, type CredentialProvider, type CredentialSummary } from '../lib/agentVaultClient';
@@ -24,6 +24,7 @@ const secondary = 'rounded-lg border border-slate-600 px-4 py-2.5 text-slate-200
 
 export function AgentLibrary() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const initialEditHandled = useRef(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState<SavedAgent[]>([]);
@@ -64,6 +65,13 @@ export function AgentLibrary() {
   }
 
   useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    if (loading || initialEditHandled.current || !userId) return;
+    initialEditHandled.current = true;
+    const id = new URLSearchParams(window.location.search).get('agent');
+    const existing = saved.find(agent => agent.id === id);
+    if (existing) selectSaved(existing);
+  }, [loading, userId, saved]);
 
   function selectPreset(preset: typeof PRESETS[number]) {
     setForm({ ...EMPTY_FORM, name: preset.title === 'Blank agent' ? '' : preset.title, model: preset.model, systemInstruction: preset.instructions });
@@ -135,13 +143,13 @@ export function AgentLibrary() {
   return (
     <main className="min-h-screen bg-[#0b0f19] px-4 py-8 text-slate-100 md:px-10">
       <div className="mx-auto max-w-5xl">
-        <a href="/" className="mb-8 inline-flex items-center gap-2 text-sm text-slate-300 hover:text-white"><ArrowLeft size={17} /> Back to Playground</a>
+        <a href="/agents" className="mb-8 inline-flex items-center gap-2 text-sm text-slate-300 hover:text-white"><ArrowLeft size={17} /> Back to Agent Library</a>
         <div className="mb-7 flex flex-wrap items-start justify-between gap-3">
-          <div><p className="text-xs font-bold uppercase tracking-[.24em] text-violet-400">AI Wonderland</p><h1 className="mt-2 text-3xl font-bold">Agent library</h1><p className="mt-2 text-sm text-slate-400">Choose an agent, configure its capabilities, and test it before saving.</p></div>
+          <div><p className="text-xs font-bold uppercase tracking-[.24em] text-violet-400">AI Wonderland</p><h1 className="mt-2 text-3xl font-bold">Agent node builder</h1><p className="mt-2 text-sm text-slate-400">Choose an agent node, configure it, then test and save it to your library.</p></div>
           <span className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300"><LockKeyhole size={13} className="mr-1 inline" /> Server-side credential vault</span>
         </div>
         <ol className="mb-8 grid grid-cols-3 gap-2 text-center text-xs md:text-sm">
-          {['1. Choose agent', '2. Configure', '3. Test & publish'].map((label, index) => (
+          {['1. Choose node', '2. Configure node', '3. Test & save'].map((label, index) => (
             <li key={label} className={`rounded-lg border px-2 py-3 ${step === index + 1 ? 'border-violet-400 bg-violet-950/30 text-white' : 'border-slate-800 text-slate-500'}`}>{label}</li>
           ))}
         </ol>

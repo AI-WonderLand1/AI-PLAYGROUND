@@ -79,7 +79,7 @@ const INITIAL_EVENTS: NexusEvent[] = [
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [currentTab, setCurrentTab] = useState<'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'training' | 'creation' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings' | 'templates' | 'workflows'>('models');
+  const [currentTab, setCurrentTab] = useState<'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'training' | 'creation' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings' | 'templates' | 'workflows'>(() => new URLSearchParams(window.location.search).has('nodeBuilder') ? 'aiwonder' : 'models');
   const [modelsCatalogSubView, setModelsCatalogSubView] = useState<'directory' | 'infrastructure'>('directory');
   const [selectedCatalogModelId, setSelectedCatalogModelId] = useState<ModelName>('fugu-ultra');
   const [topSearch, setTopSearch] = useState('');
