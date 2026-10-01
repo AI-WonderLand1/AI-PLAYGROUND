@@ -2,10 +2,10 @@ import type { Request } from "express";
 
 type Feature = "ai_tokens" | "ai_requests" | "render_credits";
 
-export class AI WONDERLANDBillingError extends Error {
+export class DreamMakerHubBillingError extends Error {
   constructor(message: string, public readonly status = 503) {
     super(message);
-    this.name = "AI WONDERLANDBillingError";
+    this.name = "DreamMakerHubBillingError";
   }
 }
 
@@ -13,7 +13,7 @@ function billingBaseUrl() {
   const raw = (process.env.DREAMMAKERHUB_BILLING_URL || "https://dreammakerhub.website").trim();
   const url = new URL(raw);
   if (url.protocol !== "https:" && !(process.env.NODE_ENV !== "production" && url.hostname === "localhost")) {
-    throw new AI WONDERLANDBillingError("AI WONDERLAND billing URL must use HTTPS.");
+    throw new DreamMakerHubBillingError("AI WONDERLAND billing URL must use HTTPS.");
   }
   return url;
 }
@@ -21,7 +21,7 @@ function billingBaseUrl() {
 function serviceKey() {
   const key = process.env.DREAMMAKERHUB_INTERNAL_BILLING_KEY?.trim() || "";
   if (key.length < 32) {
-    throw new AI WONDERLANDBillingError("Central billing is not configured.");
+    throw new DreamMakerHubBillingError("Central billing is not configured.");
   }
   return key;
 }
@@ -29,7 +29,7 @@ function serviceKey() {
 function userAuthorization(req: Request) {
   const authorization = req.header("authorization")?.trim() || "";
   if (!/^Bearer\s+\S+/i.test(authorization)) {
-    throw new AI WONDERLANDBillingError("Sign in to AI WONDERLAND to use platform-funded AI.", 401);
+    throw new DreamMakerHubBillingError("Sign in to AI WONDERLAND to use platform-funded AI.", 401);
   }
   return authorization;
 }
@@ -44,13 +44,13 @@ export function estimateAiTokens(messages: Array<{ content?: unknown }>, maxOutp
   return Math.max(1, Math.ceil(inputCharacters / 2) + output);
 }
 
-export async function reserveAI WONDERLANDUsage(
+export async function reserveDreamMakerHubUsage(
   req: Request,
   feature: Feature,
   units: number,
 ) {
   if (!Number.isSafeInteger(units) || units < 1 || units > 1_000_000) {
-    throw new AI WONDERLANDBillingError("Invalid usage reservation.", 400);
+    throw new DreamMakerHubBillingError("Invalid usage reservation.", 400);
   }
 
   const endpoint = new URL("/api/internal/billing/reserve", billingBaseUrl());
@@ -71,7 +71,7 @@ export async function reserveAI WONDERLANDUsage(
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new AI WONDERLANDBillingError(
+    throw new DreamMakerHubBillingError(
       typeof payload?.error === "string" ? payload.error : "Central usage verification failed.",
       response.status,
     );
@@ -79,14 +79,14 @@ export async function reserveAI WONDERLANDUsage(
   return payload;
 }
 
-export async function reserveAI WONDERLANDAiRequest(
+export async function reserveDreamMakerHubAiRequest(
   req: Request,
   messages: Array<{ content?: unknown }>,
   maxOutputTokens: unknown,
 ) {
   const tokens = estimateAiTokens(messages, maxOutputTokens);
   // Request count and tokens share the same authoritative AI WONDERLAND account.
-  await reserveAI WONDERLANDUsage(req, "ai_requests", 1);
-  await reserveAI WONDERLANDUsage(req, "ai_tokens", tokens);
+  await reserveDreamMakerHubUsage(req, "ai_requests", 1);
+  await reserveDreamMakerHubUsage(req, "ai_tokens", tokens);
   return { tokens };
 }
