@@ -25,7 +25,7 @@ export async function getSupabaseUserId(req: Request): Promise<string | null> {
 
 /**
  * Resolve a stable Mem0 user scope without ever sending raw credentials to Mem0.
- * Authenticated Supabase users keep the same ID used by the main DreamMakerHub app.
+ * Authenticated Supabase users keep the same ID used by the main AI WONDERLAND app.
  * API-only clients fall back to a one-way hash of their already-validated Wonderland key.
  */
 export async function resolveMemoryUserId(req: Request, wonderlandKey?: string): Promise<string | null> {
