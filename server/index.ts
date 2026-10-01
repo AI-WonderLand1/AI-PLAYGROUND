@@ -9,6 +9,7 @@ import { addConversationMemory, injectMemoryContext, isMem0Configured, searchMem
 import { getSupabaseUserId, resolveMemoryUserId } from './memory-identity';
 import templateRouter from './template-library';
 import agentVaultRouter from './agent-vault';
+import { DreamMakerHubBillingError, reserveDreamMakerHubAiRequest } from './dreammakerhub-billing';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -150,6 +151,7 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
   }
 
   try {
+    await reserveDreamMakerHubAiRequest(req, messages, config?.maxTokens);
     const { lastUserMessage, modelMessages } = await prepareMemoryContext(auth.memoryUserId, messages);
     const result = await callModel(model, modelMessages, config || {});
 
@@ -163,6 +165,10 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
     res.json(result);
   } catch (err: any) {
     console.error(`/api/chat error for model ${model}:`, err.message);
+    if (err instanceof DreamMakerHubBillingError) {
+      res.status(err.status).json({ error: err.message, code: 'CENTRAL_BILLING' });
+      return;
+    }
     res.status(502).json({ error: err.message || 'Upstream provider error.' });
   }
 });
@@ -183,6 +189,7 @@ app.post('/api/chat/stream', streamLimiter, async (req, res) => {
   }
 
   try {
+    await reserveDreamMakerHubAiRequest(req, messages, config?.maxTokens);
     const { lastUserMessage, modelMessages } = await prepareMemoryContext(auth.memoryUserId, messages);
     const providerResponse = await callModelStreaming(model, modelMessages, config || {});
 
@@ -211,7 +218,11 @@ app.post('/api/chat/stream', streamLimiter, async (req, res) => {
   } catch (err: any) {
     console.error(`/api/chat/stream error for model ${model}:`, err.message);
     if (!res.headersSent) {
-      res.status(502).json({ error: err.message || 'Upstream provider error.' });
+      if (err instanceof DreamMakerHubBillingError) {
+        res.status(err.status).json({ error: err.message, code: 'CENTRAL_BILLING' });
+      } else {
+        res.status(502).json({ error: err.message || 'Upstream provider error.' });
+      }
     } else {
       res.end();
     }
