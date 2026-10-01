@@ -1,6 +1,6 @@
 # AI-PLAYGROUND
 
-AI-PLAYGROUND is the AI Wonderland workflow and multi-model experimentation application. It is intentionally separate from DreamMakerHub's website/world-building surfaces and from NPC-AI-SIM's NPC cognition editor.
+AI-PLAYGROUND is the AI Wonderland workflow and multi-model experimentation application. It is intentionally separate from AI WONDERLAND's website/world-building surfaces and from NPC-AI-SIM's NPC cognition editor.
 
 ## Repository role
 
@@ -12,7 +12,7 @@ AI-PLAYGROUND owns:
 - provider routing through the Express backend
 - usage and project-oriented AI experimentation surfaces
 
-It does not own NPC brain authoring or the main DreamMakerHub website/3D builder.
+It does not own NPC brain authoring or the main AI WONDERLAND website/3D builder.
 
 ## Current architecture
 
@@ -160,23 +160,23 @@ support@dreammakerhub.website
 
 ## [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y61YK1ZX)
 
-## DreamMakerHub billing and usage
+## AI WONDERLAND billing and usage
 
-AI-PLAYGROUND does not own subscriptions or customer credit balances. DreamMakerHub is the billing and entitlement control plane.
+AI-PLAYGROUND does not own subscriptions or customer credit balances. AI WONDERLAND is the billing and entitlement control plane.
 
 For platform-funded model calls:
 
-1. The browser authenticates with the same Supabase Auth project used by DreamMakerHub.
+1. The browser authenticates with the same Supabase Auth project used by AI WONDERLAND.
 2. The /api/chat or /api/chat/stream request carries that Bearer access token.
-3. The AI-PLAYGROUND server calls DreamMakerHub's internal billing reservation endpoint with the server-only shared key.
-4. DreamMakerHub verifies the user, plan, included limits, and purchased AI-token balance.
+3. The AI-PLAYGROUND server calls AI WONDERLAND's internal billing reservation endpoint with the server-only shared key.
+4. AI WONDERLAND verifies the user, plan, included limits, and purchased AI-token balance.
 5. Only an approved reservation proceeds to the upstream model provider.
-6. Usage is written to the unified DreamMakerHub ledger with source ai-playground.
+6. Usage is written to the unified AI WONDERLAND ledger with source ai-playground.
 
 Required server configuration:
 
 - DREAMMAKERHUB_BILLING_URL=https://dreammakerhub.website
-- DREAMMAKERHUB_INTERNAL_BILLING_KEY — same server-only value as DreamMakerHub
-- VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY — the same DreamMakerHub Supabase Auth project
+- DREAMMAKERHUB_INTERNAL_BILLING_KEY — same server-only value as AI WONDERLAND
+- VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY — the same AI WONDERLAND Supabase Auth project
 
 Do not add a separate Stripe subscription or independent paid-token balance to this repository.
