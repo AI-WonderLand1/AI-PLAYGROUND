@@ -7,7 +7,7 @@ import { validateWonderlandKey } from './wonderland-keys';
 import { callModel, callModelStreaming } from './providers/registry';
 import { addConversationMemory, injectMemoryContext, isMem0Configured, searchMemories } from './mem0';
 import { getSupabaseUserId, resolveMemoryUserId } from './memory-identity';
-import { CentralBillingError, bearerToken, reservePlatformAiCredits } from './billing';
+import { CentralBillingError, reservePlatformAiCredits } from './billing';
 import templateRouter from './template-library';
 import agentVaultRouter from './agent-vault';
 
@@ -36,8 +36,11 @@ app.use(cors({
 const distPath = path.resolve(__dirname, '..', 'dist');
 app.use(express.static(distPath));
 
-// Stripe webhook — only mount if Stripe key is configured
-if (process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY) {
+// Subscription truth belongs to the main AI WONDERLAND service. Keep the old
+// Playground webhook off by default so satellite services cannot become a
+// second billing authority during migration.
+if (process.env.PLAYGROUND_LEGACY_STRIPE_WEBHOOK_ENABLED === 'true' &&
+    (process.env.STRIPE_API_KEY || process.env.STRIPE_SECRET_KEY)) {
   const { default: stripeWebhook } = await import('./stripe-webhook');
   app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
 }
