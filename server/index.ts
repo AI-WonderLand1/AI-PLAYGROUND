@@ -7,6 +7,7 @@ import { validateWonderlandKey } from './wonderland-keys';
 import { callModel, callModelStreaming } from './providers/registry';
 import { addConversationMemory, injectMemoryContext, isMem0Configured, searchMemories } from './mem0';
 import { getSupabaseUserId, resolveMemoryUserId } from './memory-identity';
+import { CentralBillingError, bearerToken, reservePlatformAiCredits } from './billing';
 import templateRouter from './template-library';
 import agentVaultRouter from './agent-vault';
 
@@ -72,7 +73,7 @@ const streamLimiter = rateLimit({
 });
 
 function validateChatBody(body: any): { ok: boolean; error?: string } {
-  const { model, messages } = body || {};
+  const { model, messages, config } = body || {};
   if (typeof model !== 'string' || !model.trim()) {
     return { ok: false, error: 'Missing required field: model' };
   }
@@ -90,6 +91,20 @@ function validateChatBody(body: any): { ok: boolean; error?: string } {
       (msg.role !== 'user' && msg.role !== 'assistant' && msg.role !== 'system')
     ) {
       return { ok: false, error: 'Each message must be { role: "user"|"assistant"|"system", content: string } with content under 50,000 characters' };
+    }
+  }
+  if (config !== undefined) {
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      return { ok: false, error: 'config must be an object.' };
+    }
+    if (config.maxTokens !== undefined && (!Number.isSafeInteger(config.maxTokens) || config.maxTokens < 1 || config.maxTokens > 4096)) {
+      return { ok: false, error: 'config.maxTokens must be an integer from 1 to 4096.' };
+    }
+    if (config.temperature !== undefined && (typeof config.temperature !== 'number' || config.temperature < 0 || config.temperature > 2)) {
+      return { ok: false, error: 'config.temperature must be between 0 and 2.' };
+    }
+    if (config.topP !== undefined && (typeof config.topP !== 'number' || config.topP < 0 || config.topP > 1)) {
+      return { ok: false, error: 'config.topP must be between 0 and 1.' };
     }
   }
   return { ok: true };
@@ -151,6 +166,7 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
 
   try {
     const { lastUserMessage, modelMessages } = await prepareMemoryContext(auth.memoryUserId, messages);
+    const reservation = await reservePlatformAiCredits(req, model, modelMessages, config || {});
     const result = await callModel(model, modelMessages, config || {});
 
     if (lastUserMessage && typeof result.content === 'string' && result.content.trim()) {
@@ -160,9 +176,13 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
       ]);
     }
 
-    res.json(result);
+    res.json({ ...result, billing: reservation });
   } catch (err: any) {
     console.error(`/api/chat error for model ${model}:`, err.message);
+    if (err instanceof CentralBillingError) {
+      res.status(err.status).json({ error: err.message, code: 'COST_GUARD' });
+      return;
+    }
     res.status(502).json({ error: err.message || 'Upstream provider error.' });
   }
 });
@@ -184,6 +204,7 @@ app.post('/api/chat/stream', streamLimiter, async (req, res) => {
 
   try {
     const { lastUserMessage, modelMessages } = await prepareMemoryContext(auth.memoryUserId, messages);
+    const reservation = await reservePlatformAiCredits(req, model, modelMessages, config || {});
     const providerResponse = await callModelStreaming(model, modelMessages, config || {});
 
     // Streaming provider formats differ, so store the user turn immediately and
@@ -198,6 +219,8 @@ app.post('/api/chat/stream', streamLimiter, async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
+    res.setHeader('X-AIW-Cost-Class', reservation.costClass);
+    res.setHeader('X-AIW-Reserved-Units', String(reservation.billedUnits));
 
     const reader = providerResponse.body!.getReader();
     const decoder = new TextDecoder();
@@ -211,7 +234,11 @@ app.post('/api/chat/stream', streamLimiter, async (req, res) => {
   } catch (err: any) {
     console.error(`/api/chat/stream error for model ${model}:`, err.message);
     if (!res.headersSent) {
-      res.status(502).json({ error: err.message || 'Upstream provider error.' });
+      if (err instanceof CentralBillingError) {
+        res.status(err.status).json({ error: err.message, code: 'COST_GUARD' });
+      } else {
+        res.status(502).json({ error: err.message || 'Upstream provider error.' });
+      }
     } else {
       res.end();
     }
@@ -223,6 +250,13 @@ app.get('/api/health', (_req, res) => {
     status: 'ok',
     timestamp: Date.now(),
     memory: { mem0Configured: isMem0Configured() },
+    billing: {
+      centralConfigured: Boolean(
+        process.env.DREAMMAKERHUB_BILLING_URL &&
+        (process.env.DREAMMAKERHUB_INTERNAL_BILLING_KEY?.length || 0) >= 32
+      ),
+      platformFundedChatRequiresSupabase: true,
+    },
   });
 });
 
