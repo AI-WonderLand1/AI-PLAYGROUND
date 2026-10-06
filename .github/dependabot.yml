@@ -10,6 +10,13 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # @react-three/fiber 9.7 currently requires React/React DOM < 19.3.
+    # Hold these updates until the Three/Fiber peer range supports 19.3.
+    ignore:
+      - dependency-name: "react"
+        versions: [">=19.3.0"]
+      - dependency-name: "react-dom"
+        versions: [">=19.3.0"]
 
   # Keeps your GitHub Actions workflows updated
   - package-ecosystem: "github-actions"
