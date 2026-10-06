@@ -1,12 +1,8 @@
 name: Deploy AI Playground to UpCloud VM
 
+# UpCloud is a manual recovery target only. Railway deploys main branch automatically.
+# AWS EKS remains the primary Kubernetes host for DreamMakerHub customer IDEs.
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -45,7 +41,7 @@ jobs:
           echo 'VITE_SUPABASE_ANON_KEY=ci-public-placeholder' >> "$GITHUB_ENV"
 
       - name: Validate Supabase frontend configuration
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
