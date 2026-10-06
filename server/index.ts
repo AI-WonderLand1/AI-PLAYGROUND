@@ -10,6 +10,7 @@ import { getSupabaseUserId, resolveMemoryUserId } from './memory-identity';
 import { CentralBillingError, reservePlatformAiCredits } from './billing';
 import templateRouter from './template-library';
 import agentVaultRouter from './agent-vault';
+import { getAccountProviderCatalog } from './central-providers';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,6 +59,16 @@ const apiLimiter = rateLimit({
 // Register the limiter BEFORE the router so it actually runs for matched routes.
 app.use('/api/templates', apiLimiter);
 app.use('/api/templates', templateRouter);
+
+app.get('/api/account/providers', apiLimiter, async (req, res) => {
+  try {
+    res.json(await getAccountProviderCatalog(req));
+  } catch (error) {
+    res.status(503).json({
+      error: error instanceof Error ? error.message : 'Account provider settings are unavailable.',
+    });
+  }
+});
 
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
