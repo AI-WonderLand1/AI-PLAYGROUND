@@ -1040,7 +1040,7 @@ config: {
     setExecutionLog(previous => [...previous, '[System] Added node ' + title + ' (' + newNode.type + ') to the canvas. Not executed.']);
     setDraftNode(null);
     showNotification(title + ' added to canvas. Run it to verify execution.');
-  }
+  };
 
 // Import a template workflow
 const handleImportTemplate = (template: WorkflowTemplate) => {
