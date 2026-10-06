@@ -3,6 +3,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { MODEL_ROUTES, callModel } from './providers/registry';
 import { validateWonderlandKey } from './wonderland-keys';
+import { reservePlatformAiCredits } from './billing';
 
 type Provider = 'openrouter' | 'openai' | 'anthropic' | 'wonderland';
 type AuthorizedRequest = Request & { vaultUserId?: string };
@@ -115,7 +116,13 @@ router.post('/test', async (req: AuthorizedRequest, res: Response) => {
     let output: string;
     if (credential.provider === 'wonderland') {
       if (!validateWonderlandKey(credential.value)) { res.status(403).json({ error: 'Wonderland key is invalid' }); return; }
-      const result = await callModel(model, [{ role: 'user', content: prompt }], { systemInstruction });
+      await reservePlatformAiCredits(
+        req,
+        model,
+        [{ role: 'user', content: prompt }],
+        { systemInstruction, maxTokens: 512 },
+      );
+      const result = await callModel(model, [{ role: 'user', content: prompt }], { systemInstruction, maxTokens: 512 });
       output = typeof result.content === 'string' ? result.content : '';
     } else {
       const path = credential.provider === 'openrouter' ? MODEL_ROUTES[model] || model : model;
