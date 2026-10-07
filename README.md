@@ -14,6 +14,16 @@ AI-PLAYGROUND owns:
 
 It does not own NPC brain authoring or the main DreamMakerHub website/3D builder.
 
+## User guide
+
+See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) for the customer-facing guide to:
+
+- the Home, Dashboard, Models, Fusion, Chat, AI-Wonder, Activity, Analytics, API Keys, Presets, Templates, Workflows, Providers, and Settings areas
+- what the main agent and workflow buttons do
+- which external AI providers and services can be connected
+- how the encrypted credential vault works
+- what AI-PLAYGROUND owns versus dreammakerhub.website and NPC-AI-SIM
+
 ## Current architecture
 
 ```text
