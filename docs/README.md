@@ -2,6 +2,9 @@
 
 Repository documentation is grouped here so the project root stays focused on runtime, deployment, and package configuration.
 
+## User documentation
+- `USER_GUIDE.md` — navigation, button behavior, external service connections, capabilities, and repository boundaries
+
 ## Planning
 - `planning/TODO_CANVAS.md` — visual workflow canvas roadmap
 - `planning/TODO_PLAYGROUND.md` — playground/OpenRouter roadmap
