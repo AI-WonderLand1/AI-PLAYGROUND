@@ -113,7 +113,14 @@ export function Playground({ module }: PlaygroundProps) {
         }
       }
 
-      throw new Error('This is an unsaved demo agent. Open Agent Library, choose an agent, add an encrypted credential, test, and publish it before chatting.');
+      if (!session?.access_token) throw new Error('Sign in and configure your account provider, or publish an agent with an encrypted credential.');
+      const response = await fetch('/api/account/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ messages: [...messages.slice(-6).map(message => ({ role: message.role, content: message.content })), { role: 'user', content: prompt }], system: config.systemInstruction || '', maxTokens: 1024 }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.content) throw new Error(result?.error || 'Account provider request failed.');
+      setMessages(previous => [...previous, { role: 'assistant', content: result.content, timestamp: Date.now() }]);
     } catch (error) {
       console.error("AI Error:", error);
       setMessages(prev => [...prev, {
@@ -141,7 +148,7 @@ export function Playground({ module }: PlaygroundProps) {
           <Terminal className="w-4 h-4 text-[#E4E3E0]" />
           <div className="flex flex-col">
             <h1 className="font-serif italic text-xs text-[#E4E3E0] uppercase tracking-widest leading-none mb-1">{module.name}</h1>
-            <span className="text-[9px] font-mono text-[#555] uppercase tracking-tighter">{config.model}</span>
+            <span className="text-[9px] font-mono text-[#555] uppercase tracking-tighter">{config.model} · Saved agents use their credential; other modules use your account default</span>
           </div>
         </div>
         

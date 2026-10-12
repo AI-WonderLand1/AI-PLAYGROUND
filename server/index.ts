@@ -10,7 +10,7 @@ import { getSupabaseUserId, resolveMemoryUserId } from './memory-identity';
 import { CentralBillingError, reservePlatformAiCredits } from './billing';
 import templateRouter from './template-library';
 import agentVaultRouter from './agent-vault';
-import { getAccountProviderCatalog } from './central-providers';
+import { getAccountProviderCatalog, forwardAccountRequest } from './central-providers';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,6 +60,34 @@ const apiLimiter = rateLimit({
 app.use('/api/templates', apiLimiter);
 app.use('/api/templates', templateRouter);
 
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
+
+app.get('/api/account/usage', apiLimiter, async (req, res) => {
+  if (!/^Bearer\s+\S+$/i.test(req.header('authorization') || '')) { res.status(401).json({ error: 'Sign in to view your usage.' }); return; }
+  try {
+    const response = await forwardAccountRequest(req, '/api/usage');
+    const body = await response.json();
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.status(response.status).json(body);
+  } catch { res.status(503).json({ error: 'Account usage is unavailable.' }); }
+});
+app.post('/api/account/chat', chatLimiter, async (req, res) => {
+  if (!/^Bearer\s+\S+$/i.test(req.header('authorization') || '')) { res.status(401).json({ error: 'Sign in to use your account provider.' }); return; }
+  try {
+    const { messages, system, maxTokens, temperature } = req.body || {};
+    const response = await forwardAccountRequest(req, '/api/ai-providers/chat', { messages, system, maxTokens, temperature, source: 'ai-playground' });
+    const body = await response.json();
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.status(response.status).json(body);
+  } catch { res.status(503).json({ error: 'Account provider is unavailable.' }); }
+});
+
 app.get('/api/account/providers', apiLimiter, async (req, res) => {
   try {
     res.json(await getAccountProviderCatalog(req));
@@ -68,14 +96,6 @@ app.get('/api/account/providers', apiLimiter, async (req, res) => {
       error: error instanceof Error ? error.message : 'Account provider settings are unavailable.',
     });
   }
-});
-
-const chatLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests. Please slow down.' },
 });
 
 const streamLimiter = rateLimit({

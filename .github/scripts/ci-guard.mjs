@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-const workflow = readFileSync('.github/workflows/deploy.yml', 'utf8');
+const workflow = readFileSync('.github/workflows/deploy.yml', 'utf8').replace(/^\s*#.*$/gm, '');
 const beforeJobs = workflow.split(/^jobs:\s*$/m)[0];
 const build = workflow.split(/^  build:\s*$/m)[1]?.split(/^  deploy:\s*$/m)[0] || '';
 const deploy = workflow.split(/^  deploy:\s*$/m)[1] || '';
