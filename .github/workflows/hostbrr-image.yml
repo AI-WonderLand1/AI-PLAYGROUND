@@ -1,0 +1,62 @@
+name: Build Playground HostBrr image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - "src/**"
+      - "public/**"
+      - "index.html"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.ts"
+      - "tsconfig.json"
+      - ".github/workflows/hostbrr-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: playground-hostbrr-image-main
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate public build configuration
+        shell: bash
+        env:
+          PUBLIC_URL: ${{ vars.VITE_SUPABASE_URL || vars.NEXT_PUBLIC_SUPABASE_URL || secrets.VITE_SUPABASE_URL || secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          PUBLIC_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || secrets.VITE_SUPABASE_ANON_KEY || secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$PUBLIC_URL" == https://*.supabase.co ]] || { echo 'Set public Supabase project URL in repository Actions variables'; exit 1; }
+          test -n "$PUBLIC_KEY" || { echo 'Set Supabase publishable key in repository Actions variables'; exit 1; }
+      - name: Authenticate with GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push immutable image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          build-args: |
+            VITE_SUPABASE_URL=${{ vars.VITE_SUPABASE_URL || vars.NEXT_PUBLIC_SUPABASE_URL || secrets.VITE_SUPABASE_URL || secrets.NEXT_PUBLIC_SUPABASE_URL }}
+            VITE_SUPABASE_ANON_KEY=${{ vars.VITE_SUPABASE_ANON_KEY || vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || secrets.VITE_SUPABASE_ANON_KEY || secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+          tags: |
+            ghcr.io/ai-wonderland1/ai-playground:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/AI-WonderLand1/AI-PLAYGROUND
+            org.opencontainers.image.revision=${{ github.sha }}
