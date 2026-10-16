@@ -9,17 +9,9 @@ function isHttpUrl(url: string): boolean {
   }
 }
 
-const envVar = (name: string): string => {
-  const viteVal = import.meta.env?.[`VITE_${name}`];
-  if (viteVal) return String(viteVal);
-  if (typeof process !== 'undefined' && process.env) {
-    return String(process.env[name] || process.env[`NEXT_PUBLIC_${name}`] || '');
-  }
-  return '';
-};
-
-const supabaseUrl = envVar('SUPABASE_URL').trim();
-const supabaseAnonKey = envVar('SUPABASE_ANON_KEY').trim();
+// Explicit identifiers let Vite inject the configured public URL and publishable key.
+const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || '').trim();
+const supabaseAnonKey = String(import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
 export const supabase = (supabaseUrl && supabaseAnonKey && isHttpUrl(supabaseUrl))
   ? createClient(supabaseUrl, supabaseAnonKey)
