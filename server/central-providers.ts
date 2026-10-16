@@ -39,3 +39,13 @@ export async function getAccountProviderCatalog(req: Request): Promise<AccountPr
   }
   return body as AccountProviderCatalog;
 }
+
+export async function forwardAccountRequest(req: Request, path: '/api/usage' | '/api/ai-providers/chat', body?: object) {
+  const auth = req.header('authorization')?.trim();
+  if (!/^Bearer\s+\S+$/i.test(auth || '')) throw new Error('Sign in to use your account.');
+  const origin = new URL(process.env.DREAMMAKERHUB_PROVIDER_CATALOG_URL?.trim() || DEFAULT_CATALOG_URL);
+  return fetch(new URL(path, origin), {
+    method: body ? 'POST' : 'GET', headers: { Authorization: auth!, 'Content-Type': 'application/json' },
+    ...(body ? { body: JSON.stringify(body) } : {}), redirect: 'error', signal: AbortSignal.timeout(body ? 70000 : 10000),
+  });
+}

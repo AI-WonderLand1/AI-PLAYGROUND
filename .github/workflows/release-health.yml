@@ -39,9 +39,9 @@ jobs:
         run: |
           set -euo pipefail
           title='Playground public smoke checks failing'
-          existing="$(gh issue list --state open --json number,title --jq '.[] | select(.title == "Playground public smoke checks failing") | .number' | head -n 1)"
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --json number,title --jq '.[] | select(.title == "Playground public smoke checks failing") | .number' | head -n 1)"
           if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "Public smoke failed again: $RUN_URL"
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "Public smoke failed again: $RUN_URL"
           else
-            gh issue create --title "$title" --body "Public API, SPA or JavaScript MIME check failed: $RUN_URL. No credentials were used."
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "Public API, SPA or JavaScript MIME check failed: $RUN_URL. No credentials were used."
           fi

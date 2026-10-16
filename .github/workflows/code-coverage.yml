@@ -34,3 +34,5 @@ jobs:
       # 5. Production build
       - name: Build
         run: npm run build
+      - name: Account proxy integration checks
+        run: node scripts/account-proxy.check.mjs
