@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Globe, Search, CheckCircle, Shield, Calendar, DollarSign, 
-  Activity, ArrowRight, Zap, Sliders, Play, Info, AlertCircle
+  Activity, ArrowRight, Zap, Sliders, Play, Info, AlertCircle, KeyRound
 } from 'lucide-react';
+import { ACCOUNT_AGENT_SETTINGS_URL, loadAccountProviderCatalog, type AccountProviderCatalog } from '../lib/accountProviders';
 import { cn } from '../utils';
 
 interface ProviderDetail {
@@ -296,11 +297,28 @@ export function ProvidersView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedProvider, setExpandedProvider] = useState<string | null>('openai');
   const [activeCategoryTab, setActiveCategoryTab] = useState<'image' | 'embeddings'>('image');
+  const [accountCatalog, setAccountCatalog] = useState<AccountProviderCatalog | null>(null);
+  const [accountCatalogError, setAccountCatalogError] = useState('');
 
   const filteredProviders = PROVIDERS.filter(p => 
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  useEffect(() => {
+    let active = true;
+    void loadAccountProviderCatalog()
+      .then((catalog) => {
+        if (active) {
+          setAccountCatalog(catalog);
+          setAccountCatalogError('');
+        }
+      })
+      .catch((error) => {
+        if (active) setAccountCatalogError(error instanceof Error ? error.message : 'Account providers unavailable.');
+      });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (expandedProvider) {
@@ -346,6 +364,36 @@ export function ProvidersView() {
           />
         </div>
       </div>
+
+      <section className="rounded border border-[#b8ff57]/20 bg-[#b8ff57]/[0.04] p-4 font-mono">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-[#b8ff57]">
+              <KeyRound className="h-4 w-4" /> AI WONDERLAND account providers
+            </div>
+            <p className="mt-1 text-[10px] leading-relaxed text-[#808eb5]">
+              Provider credentials belong to your AI WONDERLAND account. This Playground reads configuration metadata only; saved API keys are never returned here.
+            </p>
+            {accountCatalog ? (
+              <p className="mt-2 text-[10px] text-slate-300">
+                Active: <strong className="text-white">{accountCatalog.activeProvider}</strong>
+                {' · '}
+                Configured: <strong className="text-white">{accountCatalog.providers.filter((provider) => provider.configured).length}</strong>
+              </p>
+            ) : accountCatalogError ? (
+              <p className="mt-2 text-[10px] text-amber-300">{accountCatalogError}</p>
+            ) : (
+              <p className="mt-2 text-[10px] text-[#5e6686]">Loading account provider settings…</p>
+            )}
+          </div>
+          <a
+            href={ACCOUNT_AGENT_SETTINGS_URL}
+            className="inline-flex shrink-0 items-center justify-center rounded border border-[#b8ff57]/30 bg-[#b8ff57]/10 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-[#b8ff57] hover:bg-[#b8ff57]/15"
+          >
+            Manage providers & agents
+          </a>
+        </div>
+      </section>
 
       {/* Grid of Providers */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
