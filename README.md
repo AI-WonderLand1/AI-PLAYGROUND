@@ -114,29 +114,13 @@ Some older/provider-specific client utilities still exist in the codebase. Do no
 
 ## Production deployment
 
-The current production deployment is handled by GitHub Actions and UpCloud:
+Railway tracks `main` using `railway.json`. Express serves the built Vite SPA and `/api/*` together on the injected `PORT` (3001 by default).
 
-```text
-main
-  ↓
-verify build
-  ↓
-SSH to UpCloud
-  ↓
-sync repository
-  ↓
-install + build
-  ↓
-systemd service on port 3001
-  ↓
-nginx
-  ↓
-playground.dreammakerhub.website
-```
+`.github/workflows/deploy.yml` is a **manual UpCloud recovery workflow**, not an automatic deployment on push. The HostBrr workflow builds an immutable image; deployment and domain cutover are separate operations coordinated from `dreammakerhub.website`.
 
-See [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) for the active deployment workflow.
+Build the frontend with the shared Supabase project's public URL and a current publishable key. `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY`, or `VITE_SUPABASE_PUBLISHABLE_KEY` take precedence over legacy anon keys. The backend prefers `SUPABASE_SECRET_KEY`. Never put a service/secret key in a `VITE_*` build variable.
 
-The workflow performs both internal service checks and an nginx/front-end verification before reporting success.
+For a site that does not display, check the active origin's `/api/health`, `/`, and the JavaScript asset referenced in the HTML before changing Cloudflare DNS. The JavaScript response must have a JavaScript content type, not an HTML fallback. A successful image build alone does not establish that the image has been deployed or DNS points at its server.
 
 ## Security model
 
