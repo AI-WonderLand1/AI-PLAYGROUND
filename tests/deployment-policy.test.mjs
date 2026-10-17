@@ -11,9 +11,11 @@ test('Railway stays primary; UpCloud deployment is manual-only', () => {
 });
 
 test('browser Supabase build prefers modern Railway publishable key', () => {
-  const config = readFileSync('vite.config.ts', 'utf8');
+  const config = readFileSync('server/supabase-config.ts', 'utf8');
   const modern = config.indexOf('env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY');
   const legacy = config.indexOf('env.VITE_SUPABASE_ANON_KEY');
   assert.ok(modern !== -1 && legacy > modern);
-  assert.ok(!config.includes('SUPABASE_SERVICE_ROLE_KEY'));
+  const vite = readFileSync('vite.config.ts', 'utf8');
+  assert.ok(vite.includes('publicSupabaseConfig(env)'));
+  assert.ok(!vite.includes('SUPABASE_SERVICE_ROLE_KEY'));
 });

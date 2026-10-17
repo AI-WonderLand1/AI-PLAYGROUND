@@ -1,18 +1,18 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
+import { serverSupabaseConfig } from './supabase-config';
 
 let _client: SupabaseClient | null = null;
 
 function getClient(): SupabaseClient {
-  if (!_client && supabaseUrl) {
+  const { url: supabaseUrl, key: serviceKey } = serverSupabaseConfig(process.env);
+  if (!_client && supabaseUrl && serviceKey) {
     _client = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
   }
   if (!_client) {
-    throw new Error('Supabase not configured — set SUPABASE_URL env var');
+    throw new Error('Supabase not configured — set SUPABASE_URL and SUPABASE_SECRET_KEY');
   }
   return _client;
 }

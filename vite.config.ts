@@ -1,3 +1,4 @@
+import { publicSupabaseConfig } from './server/supabase-config';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
@@ -5,9 +6,7 @@ import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
-  const supabaseUrl = env.VITE_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || env.SUPABASE_URL || '';
-  // Railway supplies the modern public key. Never prefer a disabled legacy anon key.
-  const supabaseAnonKey = env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || '';
+  const { url: supabaseUrl, key: supabaseAnonKey } = publicSupabaseConfig(env);
   return {
     plugins: [react(), tailwindcss()],
     define: {
