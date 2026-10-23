@@ -20,8 +20,8 @@
     "@vitejs/plugin-react": "^6.1.1",
     "clsx": "^2.1.1",
     "cors": "^2.8.6",
-    "cron-parser": "^5.10.2",
-    "dotenv": "^18.0.7",
+    "cron-parser": "^5.7.0",
+    "dotenv": "^18.0.8",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
     "lucide-react": "^1.45.0",
@@ -33,7 +33,7 @@
     "tailwind-merge": "^3.6.0",
     "three": "^0.185.1",
     "tsx": "^4.23.13",
-    "vite": "^8.3.0"
+    "vite": "^8.3.4"
   },
   "overrides": {
     "protobufjs": "7.6.5"
@@ -47,6 +47,6 @@
     "autoprefixer": "^10.6.1",
     "tailwindcss": "^4.3.3",
     "typescript": "~7.0.2",
-    "vite": "^8.3.0"
+    "vite": "^8.3.4"
   }
 }
