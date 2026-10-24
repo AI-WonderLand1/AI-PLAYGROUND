@@ -1796,7 +1796,7 @@ export function ModelsCatalog({ onSelectModel, selectedModelId, onOpenKeysModal,
         </main>
           </>
         ) : (
-          <ProvidersView />
+          <ProvidersView onBrowseModels={() => setCatalogSubView('directory')} />
         )}
       </div>
 

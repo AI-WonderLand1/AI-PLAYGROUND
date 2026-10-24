@@ -11,9 +11,6 @@ interface ProviderDetail {
   name: string;
   description: string;
   website: string;
-  status: 'operational' | 'degraded' | 'offline';
-  uptime: string;
-  avgLatency: string;
 }
 
 const PROVIDERS: ProviderDetail[] = [
@@ -21,91 +18,61 @@ const PROVIDERS: ProviderDetail[] = [
     id: 'openai',
     name: 'OpenAI',
     description: 'A leading research and deployment company behind GPT-4o, Dall-E, and advanced vision/image foundations.',
-    website: 'https://openai.com',
-    status: 'operational',
-    uptime: '99.96%',
-    avgLatency: '320ms'
+    website: 'https://openai.com'
   },
   {
     id: 'google',
     name: 'Google',
     description: 'Pioneers in multimodal transformer architectures, providing state-of-the-art Gemini Reasoning and Flash models.',
-    website: 'https://deepmind.google',
-    status: 'operational',
-    uptime: '99.98%',
-    avgLatency: '240ms'
+    website: 'https://deepmind.google'
   },
   {
     id: 'anthropic',
     name: 'Anthropic',
     description: 'An AI safety and research company, creators of the highly capable Claude Fable and Claude Sonnet families.',
-    website: 'https://anthropic.com',
-    status: 'operational',
-    uptime: '99.97%',
-    avgLatency: '410ms'
+    website: 'https://anthropic.com'
   },
   {
     id: 'sakana',
     name: 'Sakana AI',
     description: 'A Tokyo-based laboratory focused on nature-inspired swarm architectures and evolutionary model merges.',
-    website: 'https://sakana.ai',
-    status: 'operational',
-    uptime: '100.0%',
-    avgLatency: '180ms'
+    website: 'https://sakana.ai'
   },
   {
     id: 'sourceful',
     name: 'Sourceful',
     description: 'Unified text-to-image and image-to-image families utilizing multi-step reasoning planning engines.',
-    website: 'https://sourceful.io',
-    status: 'operational',
-    uptime: '99.94%',
-    avgLatency: '820ms'
+    website: 'https://sourceful.io'
   },
   {
     id: 'microsoft',
     name: 'Microsoft',
     description: 'Host of the MAI family and enterprise-grade models via Azure AI Studio and Azure Foundry pipelines.',
-    website: 'https://azure.microsoft.com',
-    status: 'operational',
-    uptime: '99.95%',
-    avgLatency: '350ms'
+    website: 'https://azure.microsoft.com'
   },
   {
     id: 'xai',
     name: 'xAI',
     description: 'Grok reasoning engines featuring high-fidelity real-world grounding and photorealistic visual synthesis.',
-    website: 'https://x.ai',
-    status: 'operational',
-    uptime: '99.91%',
-    avgLatency: '460ms'
+    website: 'https://x.ai'
   },
   {
     id: 'cohere',
     name: 'Cohere',
     description: 'Enterprise NLP, embeddings, agentic coding models (North Mini), and search grounding APIs.',
-    website: 'https://cohere.com',
-    status: 'operational',
-    uptime: '99.97%',
-    avgLatency: '290ms'
+    website: 'https://cohere.com'
   },
   {
     id: 'perplexity',
     name: 'Perplexity',
     description: 'A conversational search engine and developer API host providing state-of-the-art text and grounding embedding pipelines.',
-    website: 'https://perplexity.ai',
-    status: 'operational',
-    uptime: '99.95%',
-    avgLatency: '210ms'
+    website: 'https://perplexity.ai'
   },
   {
     id: 'nvidia',
     name: 'NVIDIA',
     description: 'Global leader in AI hardware and software architectures, offering high-fidelity microservice models via NIM endpoints.',
-    website: 'https://nvidia.com',
-    status: 'operational',
-    uptime: '99.99%',
-    avgLatency: '150ms'
+    website: 'https://nvidia.com'
   }
 ];
 
@@ -293,7 +260,7 @@ const PROVIDER_EMBEDDING_MODELS: ProviderModel[] = [
   }
 ];
 
-export function ProvidersView() {
+export function ProvidersView({ onBrowseModels }: { onBrowseModels?: () => void }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedProvider, setExpandedProvider] = useState<string | null>('openai');
   const [activeCategoryTab, setActiveCategoryTab] = useState<'image' | 'embeddings'>('image');
@@ -342,13 +309,13 @@ export function ProvidersView() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#1f2235]/40 pb-6">
         <div>
           <div className="text-[10px] text-[#b8ff57] bg-[#b8ff57]/10 px-2 py-0.5 rounded w-max uppercase tracking-widest font-mono font-bold mb-2 border border-[#b8ff57]/20">
-            Infrastructure Grid
+            Provider Directory
           </div>
           <h2 className="text-xl font-serif italic font-bold text-[#E4E3E0] tracking-tight">
             AI Service Providers
           </h2>
           <p className="text-xs font-mono text-[#5e6686] mt-1">
-            Status indexes of underlying AI corporations, network performance logs, and their specialized multimodal image-generation & embedding pipelines.
+            Provider information and sample model references. Live provider status, performance and pricing are not verified here.
           </p>
         </div>
 
@@ -400,7 +367,7 @@ export function ProvidersView() {
         
         {/* Providers list */}
         <div className="xl:col-span-1 space-y-3 font-mono">
-          <div className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold mb-2">// Active Host Registry</div>
+          <div className="text-[9px] uppercase tracking-wider text-[#808eb5] block font-bold mb-2">// Provider reference</div>
           
           {filteredProviders.map((p) => {
             const isSelected = expandedProvider === p.id;
@@ -425,14 +392,11 @@ export function ProvidersView() {
                     <span className="text-[8px] text-[#5e6686] block uppercase mt-0.5">{p.website}</span>
                   </div>
  
-                  <span className="inline-flex items-center gap-1 text-[8.5px] font-bold text-[#b8ff57]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#b8ff57] animate-pulse" />
-                    {p.uptime}
-                  </span>
+                  <span className="text-[8px] uppercase text-[#808eb5]">Reference</span>
                 </div>
 
                 <div className="flex items-center justify-between border-t border-[#1f2235]/30 pt-2 text-[9px] text-[#808eb5]">
-                  <span>Latency: <strong className="text-[#5b5eff]">{p.avgLatency}</strong></span>
+                  <span>Live status not checked</span>
                   {totalModelCount > 0 && (
                     <span className="text-amber-500 font-bold uppercase tracking-wider text-[8px]">
                       {imageModelCount} IMAGE / {embeddingModelCount} EMBED
@@ -451,7 +415,6 @@ export function ProvidersView() {
             if (!p) return null;
             const imageModels = PROVIDER_IMAGE_MODELS.filter(m => m.providerId === p.id);
             const embeddingModels = PROVIDER_EMBEDDING_MODELS.filter(m => m.providerId === p.id);
-            const totalCount = imageModels.length + embeddingModels.length;
 
             return (
               <div className="bg-[#0c0d12]/90 border border-[#1f2235]/60 p-6 rounded shadow-md space-y-6">
@@ -459,19 +422,18 @@ export function ProvidersView() {
                 {/* Header detail */}
                 <div className="border-b border-[#1f2235]/40 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
-                    <h3 className="text-base font-extrabold text-white tracking-tight">{p.name} Infrastructure Portal</h3>
+                    <h3 className="text-base font-extrabold text-white tracking-tight">{p.name} Model Reference</h3>
                     <p className="text-xs text-slate-300 leading-normal max-w-xl">{p.description}</p>
                   </div>
                   
-                  <div className="shrink-0 bg-[#07080d] border border-[#1f2235] p-2.5 rounded text-[9.5px] space-y-1">
-                    <div className="flex justify-between gap-4"><span className="text-[#5e6686]">STATUS:</span> <span className="text-emerald-400 font-bold">OPERATIONAL</span></div>
-                    <div className="flex justify-between gap-4"><span className="text-[#5e6686]">UPTIME:</span> <span className="text-[#b8ff57] font-bold">{p.uptime}</span></div>
+                  <div className="shrink-0 bg-[#07080d] border border-[#1f2235] p-2.5 rounded text-[9.5px] text-amber-300">
+                    Status and uptime not verified
                   </div>
                 </div>
 
                 {/* Category tabs */}
                 <div className="flex border-b border-[#1f2235]/30 gap-6">
-                  <button
+                  {imageModels.length > 0 && <button
                     onClick={() => setActiveCategoryTab('image')}
                     className={cn(
                       "text-[10px] font-mono uppercase pb-2.5 px-1 border-b-2 transition-all font-bold tracking-wider",
@@ -481,8 +443,8 @@ export function ProvidersView() {
                     )}
                   >
                     Image Models ({imageModels.length})
-                  </button>
-                  <button
+                  </button>}
+                  {embeddingModels.length > 0 && <button
                     onClick={() => setActiveCategoryTab('embeddings')}
                     className={cn(
                       "text-[10px] font-mono uppercase pb-2.5 px-1 border-b-2 transition-all font-bold tracking-wider",
@@ -492,8 +454,15 @@ export function ProvidersView() {
                     )}
                   >
                     Embedding Models ({embeddingModels.length})
-                  </button>
+                  </button>}
                 </div>
+
+                {imageModels.length === 0 && embeddingModels.length === 0 && (
+                  <div className="rounded border border-[#1f2235] p-4 text-xs text-slate-300">
+                    No model references listed for this provider. This does not mean its services are offline.
+                    {onBrowseModels && <button type="button" onClick={onBrowseModels} className="ml-2 font-semibold text-[#b8ff57] underline">Browse all models</button>}
+                  </div>
+                )}
 
                 {/* Associated Models rendering under tabs */}
                 <div className="space-y-6">
@@ -501,7 +470,7 @@ export function ProvidersView() {
                     imageModels.length === 0 ? (
                       <div className="border border-[#1f2235]/40 bg-[#07080d] p-8 text-center rounded text-slate-500 text-xs font-mono">
                         <AlertCircle className="w-8 h-8 mx-auto text-[#5e6686] mb-2 opacity-50" />
-                        No active specialized image models cached in this provider's grid.
+                        No image model references are listed for this provider.
                       </div>
                     ) : (
                       <div className="space-y-4">
@@ -569,7 +538,7 @@ export function ProvidersView() {
                     embeddingModels.length === 0 ? (
                       <div className="border border-[#1f2235]/40 bg-[#07080d] p-8 text-center rounded text-slate-500 text-xs font-mono">
                         <AlertCircle className="w-8 h-8 mx-auto text-[#5e6686] mb-2 opacity-50" />
-                        No active specialized embedding models cached in this provider's grid.
+                        No embedding model references are listed for this provider.
                       </div>
                     ) : (
                       <div className="space-y-4">
@@ -640,7 +609,7 @@ export function ProvidersView() {
             );
           })() : (
             <div className="bg-[#0c0d12]/50 border border-[#1f2235]/40 p-12 text-center rounded text-[#5e6686]">
-              Select an AI company on the left to inspect detailed infrastructure status and specialized image model weights.
+              Select a provider on the left to inspect its listed model references.
             </div>
           )}
         </div>

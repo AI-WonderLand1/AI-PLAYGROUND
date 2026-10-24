@@ -84,6 +84,7 @@ interface AIWonderCanvasProps {
    currentTab?: 'aiwonder' | 'training' | 'creation';
   onTabChange?: (tab: 'models' | 'playground' | 'memory' | 'nexus' | 'docs' | 'aiwonder' | 'activity' | 'analytics' | 'apikeys' | 'presets' | 'providers' | 'settings') => void;
   pendingN8nImport?: { name: string; webhookUrl?: string; template?: WorkflowTemplate } | null;
+  onPendingN8nImportConsumed?: () => void;
 }
 
 // Helper: convert schedule interval string to milliseconds
@@ -165,8 +166,10 @@ export function AIWonderCanvas({
   onDismissEvent,
   currentTab = 'aiwonder',
   onTabChange,
-  pendingN8nImport
+  pendingN8nImport,
+  onPendingN8nImportConsumed
 }: AIWonderCanvasProps) {
+  const handledImportNameRef = useRef<string | null>(null);
   // Navigation sidebar state (dashboard level)
   const [activeSidebarTab, setActiveSidebarTab] = useState<'workflows' | 'credentials' | 'executions' | 'variables' | 'insights' | 'memory' | 'versions'>('workflows');
   
@@ -656,11 +659,17 @@ config: {
 
   // Import n8n template as a node on the canvas
   useEffect(() => {
-    if (pendingN8nImport?.name) {
+    if (!pendingN8nImport) {
+      handledImportNameRef.current = null;
+      return;
+    }
+    if (pendingN8nImport.name && handledImportNameRef.current !== pendingN8nImport.name) {
+      handledImportNameRef.current = pendingN8nImport.name;
       // Full workflow import: spawn all template nodes + connections on the grid
       if (pendingN8nImport.template && pendingN8nImport.template.nodes.length > 0) {
         handleImportTemplate(pendingN8nImport.template);
         showNotification(`Loaded workflow: ${pendingN8nImport.name} (${pendingN8nImport.template.nodes.length} nodes)`);
+        onPendingN8nImportConsumed?.();
         return;
       }
       pushHistory();
@@ -692,6 +701,7 @@ config: {
         }]);
       }
       showNotification(`Loaded n8n template: ${pendingN8nImport.name}`);
+      onPendingN8nImportConsumed?.();
     }
   }, [pendingN8nImport?.name]);
 
