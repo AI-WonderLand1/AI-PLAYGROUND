@@ -60,6 +60,10 @@ const apiLimiter = rateLimit({
 app.use('/api/templates', apiLimiter);
 app.use('/api/templates', templateRouter);
 
+// The agent editor calls these endpoints to list/store credentials and run
+// a real pre-save model test. Without the mounted router they all return 404.
+app.use('/api/agent-vault', apiLimiter, agentVaultRouter);
+
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 60,

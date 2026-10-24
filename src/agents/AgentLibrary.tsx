@@ -53,7 +53,10 @@ export function AgentLibrary() {
     setUserId(session.user.id);
     try {
       const [vault, agents] = await Promise.all([
-        listCredentials(),
+        listCredentials().catch((error: unknown) => {
+          setNotice(error instanceof Error ? `Credential vault: ${error.message}` : 'Credential vault unavailable.');
+          return [] as CredentialSummary[];
+        }),
         db.from('agents').select('id,name,model,system_instruction,credential_id').eq('user_id', session.user.id).order('created_at', { ascending: false }),
       ]);
       setCredentials(vault);

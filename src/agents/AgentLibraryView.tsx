@@ -20,7 +20,10 @@ export function AgentLibraryView() {
         if (!session?.user || !supabase) return;
         if (active) setSignedIn(true);
         const [keys, result] = await Promise.all([
-          listCredentials(),
+          listCredentials().catch((cause: unknown) => {
+            if (active) setError(cause instanceof Error ? `Credential vault: ${cause.message}` : 'Credential vault unavailable.');
+            return [] as CredentialSummary[];
+          }),
           supabase.from('agents').select('id,name,model,system_instruction,credential_id').eq('user_id', session.user.id).order('created_at', { ascending: false }),
         ]);
         if (result.error) throw result.error;

@@ -21,60 +21,10 @@ import { cn } from './utils';
 import { supabase, getSession, signInWithEmail } from './lib/supabase';
 import { useRealtimeSync, SyncedAgent } from './hooks/useRealtimeSync';
 
-const INITIAL_MEMORIES: MemoryNode[] = [
-  {
-    id: 'mem-1',
-    title: 'Migrated auth to Firebase',
-    content: 'Decided to move away from local mock storage to Firestore and Firebase Authentication. This handles session persistence cleanly and provides secure token exchanges for external APIs.',
-    type: 'decision',
-    ts: Date.now() - 3600000 * 24,
-  },
-  {
-    id: 'mem-2',
-    title: 'Fixed canvas rendering crash on Safari',
-    content: 'Bug occurred when the canvas size was calculated as fractional pixels during viewport resize events. Patched by wrapping coordinates in Math.floor inside the draw loop.',
-    type: 'bug',
-    ts: Date.now() - 3600000 * 12,
-  },
-  {
-    id: 'mem-3',
-    title: 'ThreeJS performance design pattern',
-    content: 'Always bundle geometries or instantiate meshes (using InstancedMesh) when dealing with more than 100 simple shapes. Ensure dispose() is called on geometries and materials on component unmount to prevent memory leaks.',
-    type: 'pattern',
-    ts: Date.now() - 3600000 * 4,
-  }
-];
-
-const INITIAL_EVENTS: NexusEvent[] = [
-  {
-    id: 'ev-1',
-    type: 'js_error',
-    severity: 'error',
-    message: 'TypeError: Cannot read properties of undefined (reading "map") at RenderFeed (feed-list.tsx:42)',
-    source: 'https://site-intelligence.io/static/js/main.js',
-    line: 42,
-    col: 18,
-    stack: 'TypeError: Cannot read properties of undefined (reading "map")\n  at RenderFeed (feed-list.tsx:42)\n  at HTMLButtonElement.dispatch (jquery.js:3)\n  at Object.trigger (jquery.js:3)',
-    timestamp: Date.now() - 45000,
-  },
-  {
-    id: 'ev-2',
-    type: 'network',
-    severity: 'warning',
-    message: 'Failed to load resource: the server responded with a status of 404 (Not Found)',
-    source: 'https://api.site-intelligence.io/v1/user/settings',
-    line: 0,
-    timestamp: Date.now() - 120000,
-  },
-  {
-    id: 'ev-3',
-    type: 'missing_asset',
-    severity: 'info',
-    message: 'Resource fetch warning: GET /assets/icon-logo.png aborted after 1500ms timeout.',
-    source: 'https://site-intelligence.io/index.html',
-    timestamp: Date.now() - 300000,
-  }
-];
+// Empty until users actually create memories or telemetry arrives. Do not
+// present sample decisions and fabricated errors as real account activity.
+const INITIAL_MEMORIES: MemoryNode[] = [];
+const INITIAL_EVENTS: NexusEvent[] = [];
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -87,6 +37,7 @@ export default function App() {
   const topSearchRef = useRef<HTMLInputElement>(null);
   const [masterKeyShort, setMasterKeyShort] = useState('');
   const [pendingN8nImport, setPendingN8nImport] = useState<{ name: string; webhookUrl: string; template?: CanvasWorkflowTemplate } | null>(null);
+  const [templateCatalog, setTemplateCatalog] = useState<'n8n' | 'canvas'>('n8n');
 
   useEffect(() => {
     async function initAuth() {
@@ -478,10 +429,8 @@ export default function App() {
         {/* Center/Right: Navigation Links */}
         <nav className="hidden lg:flex items-center gap-1">
           {([
-            { id: 'models', label: 'Home', activeOn: ['models'], subView: 'directory', externalUrl: 'https://dreammakerhub.website/homepage' },
             { id: 'dashboard', label: 'Dashboard', activeOn: [] as string[], externalUrl: 'https://dreammakerhub.website/dashboard' },
             { id: 'models', label: 'Models', activeOn: ['models'], subView: 'directory' },
-            { id: 'playground', label: 'Fusion', activeOn: [] as string[] },
             { id: 'playground', label: 'Chat', activeOn: ['playground'] },
               { id: 'aiwonder', label: 'AI-Wonder', activeOn: ['aiwonder'] },
              { id: 'docs', label: 'Docs', activeOn: ['docs'] },
@@ -490,15 +439,10 @@ export default function App() {
             { id: 'apikeys', label: 'API Keys', activeOn: ['apikeys'] },
             { id: 'presets', label: 'Presets', activeOn: ['presets'] },
             { id: 'templates', label: 'Templates', activeOn: ['templates'] },
-            { id: 'workflows', label: 'Workflows', activeOn: ['workflows'] },
-            { id: 'models', label: 'Providers', activeOn: [] as string[], subView: 'infrastructure' },
             { id: 'settings', label: 'Settings', activeOn: ['settings'] },
           ] as { id: string; label: string; activeOn: string[]; subView?: string; externalUrl?: string }[]).map((link, idx) => {
             const isActive = 
-              (link.label === 'Providers' && currentTab === 'models' && modelsCatalogSubView === 'infrastructure') ||
-              (link.label === 'Models' && currentTab === 'models' && modelsCatalogSubView === 'directory') ||
-              (link.label === 'Home' && currentTab === 'models' && modelsCatalogSubView === 'directory') ||
-              (link.label !== 'Providers' && link.label !== 'Models' && link.label !== 'Home' && (link.activeOn.includes(currentTab) || (link.label === 'Fusion' && currentTab === 'playground')));
+              link.activeOn.includes(currentTab) || (link.id === 'templates' && currentTab === 'workflows');
             return (
               <button
                 key={idx}
@@ -590,6 +534,7 @@ export default function App() {
             currentTab={currentTab}
             onTabChange={setCurrentTab}
             pendingN8nImport={pendingN8nImport}
+            onPendingN8nImportConsumed={() => setPendingN8nImport(null)}
           />
         )}
 
@@ -667,33 +612,33 @@ export default function App() {
           <SettingsView />
         )}
 
-        {/* Template Library Tab View */}
-        {currentTab === 'templates' && (
-          <LibraryView
-            onLoadToCanvas={(libTemplate) => {
-              const canvasTemplate = toCanvasTemplate(libTemplate);
-              setPendingN8nImport({
-                name: canvasTemplate.name,
-                webhookUrl: extractWebhookUrl(libTemplate.workflow),
-                template: canvasTemplate,
-              });
-              setCurrentTab('aiwonder');
-              setTimeout(() => setPendingN8nImport(null), 500);
-            }}
-          />
-        )}
-
-        {/* Canvas Templates Page View */}
-        {currentTab === 'workflows' && (
-          <CanvasTemplatesView
-            onLoadToCanvas={(templateId) => {
-              const tpl = WORKFLOW_TEMPLATES.find(t => t.id === templateId);
-              if (!tpl) return;
-              setPendingN8nImport({ name: tpl.name, webhookUrl: '', template: tpl });
-              setCurrentTab('aiwonder');
-              setTimeout(() => setPendingN8nImport(null), 500);
-            }}
-          />
+        {/* One library with two working catalogs, both loading the existing AI-Wonder canvas. */}
+        {(currentTab === 'templates' || currentTab === 'workflows') && (
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#0a0a0a]">
+            <div className="flex shrink-0 items-center gap-2 border-b border-[#1f2235] px-6 py-3 text-[11px] font-mono">
+              <span className="mr-3 text-[#808eb5] uppercase tracking-wider">Templates &amp; Workflows</span>
+              <button type="button" onClick={() => setTemplateCatalog('n8n')} aria-pressed={templateCatalog === 'n8n'} className={cn('rounded px-3 py-1.5', templateCatalog === 'n8n' ? 'bg-[#b8ff57] text-black' : 'border border-[#303044] text-[#aaa] hover:text-white')}>n8n templates</button>
+              <button type="button" onClick={() => setTemplateCatalog('canvas')} aria-pressed={templateCatalog === 'canvas'} className={cn('rounded px-3 py-1.5', templateCatalog === 'canvas' ? 'bg-[#b8ff57] text-black' : 'border border-[#303044] text-[#aaa] hover:text-white')}>Canvas workflows</button>
+            </div>
+            {templateCatalog === 'n8n' ? (
+              <LibraryView
+                onLoadToCanvas={(libTemplate) => {
+                  const canvasTemplate = toCanvasTemplate(libTemplate);
+                  setPendingN8nImport({ name: canvasTemplate.name, webhookUrl: extractWebhookUrl(libTemplate.workflow), template: canvasTemplate });
+                  setCurrentTab('aiwonder');
+                }}
+              />
+            ) : (
+              <CanvasTemplatesView
+                onLoadToCanvas={(templateId) => {
+                  const tpl = WORKFLOW_TEMPLATES.find(t => t.id === templateId);
+                  if (!tpl) return;
+                  setPendingN8nImport({ name: tpl.name, webhookUrl: '', template: tpl });
+                  setCurrentTab('aiwonder');
+                }}
+              />
+            )}
+          </div>
         )}
 
       </div>
