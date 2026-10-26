@@ -10,6 +10,12 @@ function getStripe(): Stripe {
   return _stripe;
 }
 
+// Period bounds moved from the subscription to its items; fall back to the old top-level fields.
+function periodIso(sub: any, field: 'current_period_start' | 'current_period_end'): string | null {
+  const ts = sub.items?.data?.[0]?.[field] ?? sub[field];
+  return typeof ts === 'number' ? new Date(ts * 1000).toISOString() : null;
+}
+
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
 
 const router = Router();
@@ -43,8 +49,8 @@ router.post('/', async (req, res) => {
           stripe_subscription_id: sub.id,
           plan_id: sub.items.data[0]?.price?.lookup_key || 'free',
           status: sub.status,
-          current_period_start: new Date(sub.current_period_start * 1000).toISOString(),
-          current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
+          current_period_start: periodIso(sub, 'current_period_start'),
+          current_period_end: periodIso(sub, 'current_period_end'),
           cancel_at_period_end: sub.cancel_at_period_end,
         });
         break;
@@ -62,8 +68,8 @@ router.post('/', async (req, res) => {
         if (existing) {
           await supabaseAdmin.from('subscriptions').update({
             status: sub.status,
-            current_period_start: new Date(sub.current_period_start * 1000).toISOString(),
-            current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
+            current_period_start: periodIso(sub, 'current_period_start'),
+            current_period_end: periodIso(sub, 'current_period_end'),
             cancel_at_period_end: sub.cancel_at_period_end,
             updated_at: new Date().toISOString(),
           }).eq('stripe_subscription_id', sub.id);
